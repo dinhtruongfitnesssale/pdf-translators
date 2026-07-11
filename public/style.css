@@ -55,6 +55,24 @@ body {
 }
 .brand .arrow { color: var(--amber); font-style: italic; font-weight: 600; }
 
+.topbar-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* Nút ☰ chỉ dùng trên điện thoại — desktop luôn ẩn */
+.menu-toggle {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  padding: 8px 13px;
+  cursor: pointer;
+}
+.menu-toggle .menu-ic { font-size: 16px; line-height: 1; }
+
 .setup { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end; }
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 130px; }
 .field.grow { flex: 1 1 260px; }
@@ -136,6 +154,48 @@ body {
 .status { font-family: var(--mono); font-size: 12.5px; color: var(--slate); }
 .status.done { color: var(--herb); }
 .status.error { color: var(--clay); }
+
+/* ---------- Điện thoại: gộp cài đặt + công cụ vào nút ☰ để chừa chỗ đọc ---------- */
+@media (max-width: 720px) {
+  /* Chặn tràn ngang: nếu body rộng hơn màn hình, thanh sticky bị kéo giãn
+     và nút ☰ (space-between) bị đẩy ra ngoài mép phải. */
+  html, body { overflow-x: hidden; }
+  .mono { overflow-wrap: anywhere; }
+  .hints li { overflow-wrap: anywhere; }
+
+  .topbar {
+    padding: 8px 14px 10px;
+    gap: 10px;
+    max-height: 90vh;        /* không cao quá màn hình; nội dung tự cuộn trong bar */
+    overflow-y: auto;
+  }
+  .brand { min-width: 0; }
+  .brand h1 { font-size: 16px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .brand .eyebrow { display: none; }
+  .brand .arrow { display: none; }        /* bỏ «Anh → Việt» cho gọn thanh mảnh */
+  .menu-toggle { display: inline-flex; flex: 0 0 auto; }
+
+  /* Mặc định trên điện thoại: giấu cài đặt + công cụ, chỉ chừa thanh mảnh */
+  .setup, .actions { display: none; }
+  .topbar.nav-open .setup,
+  .topbar.nav-open .actions { display: flex; }
+
+  /* Khi mở menu: giãn ô/nút cho dễ chạm bằng ngón tay */
+  .setup { gap: 10px 12px; }
+  .field { min-width: 0; flex: 1 1 46%; }
+  .field.grow { flex: 1 1 100%; }
+  .check { padding-bottom: 0; }
+  .actions { gap: 8px; }
+  .actions .btn { flex: 1 1 auto; padding: 10px 12px; text-align: center; }
+  .viewmode, .zoom, .pagenav { flex: 1 1 auto; justify-content: center; }
+  .actions #status { flex: 1 1 100%; }
+
+  /* Bớt lề để nội dung rộng hơn */
+  .pages { padding: 0 14px 40px; gap: 0 16px; }
+  .empty { padding: 34px 16px; }
+  .empty-card h2 { font-size: 24px; }
+  .library { padding: 10px 14px 12px; }
+}
 
 /* ---------- Key hint (dưới navbar, cuộn theo nội dung — KHÔNG dính) ---------- */
 .keyhint {

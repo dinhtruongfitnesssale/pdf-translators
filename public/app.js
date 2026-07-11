@@ -43,6 +43,8 @@ const emptyEl = $('empty');
 const pagesEl = $('pages');
 const keyhintEl = $('keyhint');
 const libraryEl = $('library');
+const topbarEl = document.querySelector('.topbar');
+const menuToggle = $('menuToggle');
 // Modal chọn phạm vi
 const modalEl = $('modal');
 const modalTotalEl = $('modalTotal');
@@ -1143,18 +1145,29 @@ async function exportPdf() {
 openBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => {
   const f = fileInput.files && fileInput.files[0];
-  if (f) openFile(f).catch((e) => setStatus('Không mở được PDF: ' + e.message, 'error'));
+  if (f) { closeNav(); openFile(f).catch((e) => setStatus('Không mở được PDF: ' + e.message, 'error')); }
 });
-translateBtn.addEventListener('click', openRangeModal);
+translateBtn.addEventListener('click', () => { closeNav(); openRangeModal(); });
 exportBtn.addEventListener('click', exportPdf);
-closeBtn.addEventListener('click', closeDoc);
+closeBtn.addEventListener('click', () => { closeNav(); closeDoc(); });
+
+// ---------- Menu ☰ trên điện thoại: gộp cài đặt + công cụ ----------
+function setNav(open) {
+  topbarEl.classList.toggle('nav-open', open);
+  if (menuToggle) menuToggle.setAttribute('aria-expanded', String(open));
+}
+// Thu menu sau khi chọn xong để lộ vùng đọc (chỉ có tác dụng khi menu đang mở/mobile)
+function closeNav() { setNav(false); }
+if (menuToggle) {
+  menuToggle.addEventListener('click', () => setNav(!topbarEl.classList.contains('nav-open')));
+}
 
 // Thư viện: bấm tên để mở, bấm ✕ để gỡ
 libraryEl.addEventListener('click', (e) => {
   const rem = e.target.closest('[data-remove]');
   if (rem) { removeDoc(rem.getAttribute('data-remove')); return; }
   const open = e.target.closest('.doc-open');
-  if (open) openFromLibrary(open.getAttribute('data-id'));
+  if (open) { closeNav(); openFromLibrary(open.getAttribute('data-id')); }
 });
 
 // Modal
@@ -1177,19 +1190,19 @@ providerEl.addEventListener('change', () => { applyModelSuggest(); saveSettings(
 apiKeyEl.addEventListener('input', updateKeyHint);
 viewmodeEl.addEventListener('click', (e) => {
   const b = e.target.closest('.seg');
-  if (b) setMode(b.dataset.mode);
+  if (b) { setMode(b.dataset.mode); closeNav(); }
 });
 zoomInBtn.addEventListener('click', () => setZoom(zoom + 0.15));
 zoomOutBtn.addEventListener('click', () => setZoom(zoom - 0.15));
 pageInput.addEventListener('change', gotoPageFromInput);
 pageInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); gotoPageFromInput(); pageInput.blur(); }
+  if (e.key === 'Enter') { e.preventDefault(); gotoPageFromInput(); pageInput.blur(); closeNav(); }
 });
 
 // Kiểu đọc + lật trang
 readmodeEl.addEventListener('click', (e) => {
   const b = e.target.closest('.seg');
-  if (b) setReadMode(b.dataset.read);
+  if (b) { setReadMode(b.dataset.read); closeNav(); }
 });
 bookPrevBtn.addEventListener('click', () => bookGo(-1));
 bookNextBtn.addEventListener('click', () => bookGo(1));
