@@ -45,6 +45,7 @@ const keyhintEl = $('keyhint');
 const libraryEl = $('library');
 const topbarEl = document.querySelector('.topbar');
 const menuToggle = $('menuToggle');
+const expandBtnM = $('expandBtnM');
 // Modal chọn phạm vi
 const modalEl = $('modal');
 const modalTotalEl = $('modalTotal');
@@ -499,6 +500,7 @@ async function openFromBytes(ab, name, size, restoring) {
   exportBtn.disabled = false;
   closeBtn.disabled = false;
   expandBtn.disabled = false;
+  if (expandBtnM) expandBtnM.disabled = false;
 
   // Khôi phục đúng TRANG đang đọc dở (thử vài lần để tránh layout/font dịch chuyển)
   const savedPage = Number(localStorage.getItem(pageKey(docId)) || 0);
@@ -585,6 +587,9 @@ function paginateTranslation(text, contentW, contentH, fontPx, lineH) {
   return out.length ? out : [''];
 }
 
+// Điện thoại: đọc sách chỉ 1 trang/màn hình (2 trang sẽ quá bé)
+const isMobile = () => window.matchMedia('(max-width: 720px)').matches;
+
 function bookGeometry() {
   const fs = !!document.fullscreenElement;
   const topbarH = fs ? 0 : document.querySelector('.topbar').offsetHeight;
@@ -630,7 +635,7 @@ async function renderBookOriginal() {
   const rightNum = bookIndex + 2;
 
   const { stageH, stageW } = bookGeometry();
-  const hasRight = rightNum <= total;
+  const hasRight = !isMobile() && rightNum <= total; // điện thoại: 1 trang
   const cols = hasRight ? 2 : 1;
   const halfW = Math.max(160, (stageW - (cols === 2 ? 14 : 0)) / cols);
 
@@ -679,8 +684,9 @@ function renderBookTranslation() {
   }
   bookMsg.hidden = true;
 
+  const single = isMobile(); // điện thoại: 1 trang rộng hết khổ
   const { stageH, stageW } = bookGeometry();
-  let pageW = Math.min(stageH * 0.72, (stageW - 14) / 2);
+  let pageW = Math.min(stageH * 0.72, single ? stageW : (stageW - 14) / 2);
   const pageH = Math.min(stageH, pageW / 0.72);
   const padX = Math.round(pageW * 0.09);
   const padY = Math.round(pageH * 0.07);
@@ -702,7 +708,7 @@ function renderBookTranslation() {
   bookTextLeft.hidden = false;
 
   const rightIdx = bookIndex + 1;
-  if (rightIdx < total) {
+  if (!single && rightIdx < total) {
     applyPageStyle(bookTextRight, pageW, pageH, padX, padY, fontPx, lineH);
     bookTextRight.textContent = transPages[rightIdx];
     bookTextRight.hidden = false;
@@ -793,9 +799,10 @@ async function bookGo(delta) {
   const ni = Math.min(Math.max(0, bookIndex + delta), total - 1);
   if (ni === bookIndex) return;
   const dir = delta > 0 ? 'next' : 'prev';
+  const single = isMobile(); // 1 trang: chỉ có trang trái đang hiện để lật
   const src = m === 'orig'
-    ? (dir === 'next' ? bookRightCanvas : bookLeftCanvas)
-    : (dir === 'next' ? bookTextRight : bookTextLeft);
+    ? (single ? bookLeftCanvas : (dir === 'next' ? bookRightCanvas : bookLeftCanvas))
+    : (single ? bookTextLeft : (dir === 'next' ? bookTextRight : bookTextLeft));
   const canFlip = src && !src.hidden;
   const snap = canFlip ? buildFlipFromEl(src, dir) : null;
   bookIndex = ni;
@@ -871,6 +878,7 @@ async function closeDoc() {
   exportBtn.disabled = true;
   closeBtn.disabled = true;
   expandBtn.disabled = true;
+  if (expandBtnM) expandBtnM.disabled = true;
   pageInput.disabled = true;
   pageInput.value = '';
   pageTotalEl.textContent = '—';
@@ -1207,6 +1215,7 @@ readmodeEl.addEventListener('click', (e) => {
 bookPrevBtn.addEventListener('click', () => bookGo(-1));
 bookNextBtn.addEventListener('click', () => bookGo(1));
 expandBtn.addEventListener('click', toggleBookFullscreen);
+if (expandBtnM) expandBtnM.addEventListener('click', toggleBookFullscreen);
 bookExitBtn.addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); });
 document.addEventListener('fullscreenchange', () => {
   if (readMode === 'book' && pdfDoc) requestAnimationFrame(renderBook);

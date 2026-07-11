@@ -55,7 +55,23 @@ body {
 }
 .brand .arrow { color: var(--amber); font-style: italic; font-weight: 600; }
 
-.topbar-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.topbar-head { display: flex; align-items: center; gap: 10px; }
+.topbar-head .brand { margin-right: auto; min-width: 0; }
+/* Nút Phóng riêng cho điện thoại — desktop luôn ẩn (desktop dùng nút trong hàng công cụ) */
+.expand-m {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.expand-m:disabled { opacity: 0.4; cursor: not-allowed; }
 /* Nút ☰ chỉ dùng trên điện thoại — desktop luôn ẩn */
 .menu-toggle {
   display: none;
@@ -174,6 +190,8 @@ body {
   .brand .eyebrow { display: none; }
   .brand .arrow { display: none; }        /* bỏ «Anh → Việt» cho gọn thanh mảnh */
   .menu-toggle { display: inline-flex; flex: 0 0 auto; }
+  /* Nút Phóng chỉ hiện khi đang ở chế độ đọc sách */
+  body.read-book .expand-m { display: inline-flex; flex: 0 0 auto; }
 
   /* Mặc định trên điện thoại: giấu cài đặt + công cụ, chỉ chừa thanh mảnh */
   .setup, .actions { display: none; }
