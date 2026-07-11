@@ -181,6 +181,27 @@ function scrollToPage(idx) {
   const top = el.getBoundingClientRect().top + window.scrollY - stickyOffset();
   window.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
 }
+// Khôi phục vị trí đọc bền: canh lại đúng trang liên tục tới khi layout ổn định
+// (bản dịch dài + font tải trễ hay làm xê dịch). Dừng ngay khi người dùng tự thao tác.
+function restoreReadingPosition(idx) {
+  suppressScrollSave = true;
+  let cancelled = false;
+  const cancel = () => { cancelled = true; suppressScrollSave = false; };
+  const opts = { once: true, passive: true };
+  ['wheel', 'touchstart', 'keydown', 'mousedown'].forEach((ev) =>
+    window.addEventListener(ev, cancel, opts));
+  const start = performance.now();
+  const tick = () => {
+    if (cancelled || docId == null) return;
+    scrollToPage(idx);
+    if (performance.now() - start < 2000) setTimeout(() => requestAnimationFrame(tick), 90);
+    else suppressScrollSave = false;
+  };
+  requestAnimationFrame(tick);
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => { if (!cancelled && docId != null) scrollToPage(idx); });
+  }
+}
 
 // Cập nhật ô số trang (giới hạn 1 lần/khung hình cho mượt) + đi tới trang
 let pageRaf = false;
@@ -376,15 +397,7 @@ async function openFromBytes(ab, name, size, restoring) {
   pageInput.value = String(Math.min(pdf.numPages, savedPage + 1));
   bookIndex = savedPage;
   if (readMode === 'book') setReadMode('book');
-  suppressScrollSave = true;
-  const doScroll = () => scrollToPage(savedPage);
-  requestAnimationFrame(() => requestAnimationFrame(doScroll));
-  setTimeout(doScroll, 250);
-  setTimeout(() => { doScroll(); suppressScrollSave = false; }, 750);
-  // Font tải trễ làm dịch chuyển layout → cuộn lại một lần nữa khi font sẵn sàng
-  if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(() => { if (docId) doScroll(); });
-  }
+  else restoreReadingPosition(savedPage);
 }
 
 // ---------- Re-render canvases (khi đổi chế độ / đổi kích thước) ----------
