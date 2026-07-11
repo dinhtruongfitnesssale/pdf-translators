@@ -206,7 +206,14 @@ Về ĐỊNH DẠNG ĐẦU RA, hãy bỏ qua mọi hướng dẫn "quy trình/xu
 - TUYỆT ĐỐI KHÔNG thêm lời dẫn, tiêu đề như "[Bản dịch...]", không thêm chú thích, không hỏi lại, không bình luận.
 - Giữ cách xuống dòng/ngắt đoạn tương ứng với bản gốc.
 - Nếu một đoạn vốn đã là tiếng Việt hoặc chỉ là số/ký hiệu, giữ nguyên.
-- Vẫn áp dụng ĐẦY ĐỦ mọi QUY TẮC DỊCH và QUY TẮC THUẬT NGỮ ở trên.`;
+- ĐẦU RA LÀ VĂN BẢN THUẦN: TUYỆT ĐỐI KHÔNG dùng cú pháp bảng Markdown và KHÔNG dùng ký tự gạch dọc "|" hay dòng kẻ "|---|" (hiển thị rất khó đọc). Với BẢNG hoặc nội dung NHIỀU CỘT: trình bày lần lượt TỪNG CỘT — ghi tên/nhãn cột (nếu có) rồi liệt kê TOÀN BỘ nội dung của cột đó bằng các gạch đầu dòng "-", xong hẳn cột này mới sang cột kế. Ví dụ:
+  Cột A:
+  - (nội dung dòng 1 của cột A)
+  - (nội dung dòng 2 của cột A)
+  Cột B:
+  - (nội dung dòng 1 của cột B)
+  - (nội dung dòng 2 của cột B)
+- Vẫn áp dụng ĐẦY ĐỦ mọi QUY TẮC DỊCH và QUY TẮC THUẬT NGỮ ở trên (riêng phần "giữ nguyên bảng biểu" thì trình bày theo dạng liệt kê từng cột như trên, KHÔNG kẻ bảng bằng ký tự).`;
 
 function buildSystemPrompt(skillKey) {
   const skill = SKILLS[skillKey] || SKILLS.fitness;
