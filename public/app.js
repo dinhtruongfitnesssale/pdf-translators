@@ -593,7 +593,7 @@ const isMobile = () => window.matchMedia('(max-width: 720px)').matches;
 function bookGeometry() {
   const fs = !!document.fullscreenElement;
   const topbarH = fs ? 0 : document.querySelector('.topbar').offsetHeight;
-  const stageH = Math.max(360, window.innerHeight - topbarH - (fs ? 24 : 40));
+  const stageH = Math.max(360, window.innerHeight - topbarH - (fs ? 12 : 40));
   const stageW = bookStage.clientWidth || (window.innerWidth - 130);
   return { stageH, stageW };
 }

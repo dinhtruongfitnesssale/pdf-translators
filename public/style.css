@@ -420,7 +420,10 @@ body {
 
 /* Toàn màn hình */
 .book-exit { display: none; }
-#book:fullscreen { background: var(--paper); padding: 18px 12px; }
+#book:fullscreen { background: var(--paper); padding: 6px; }
+/* Ẩn 2 mũi tên khi phóng to → trang chiếm gần trọn màn hình; lật bằng cách bấm thẳng vào trang */
+#book:fullscreen .book-arrow { display: none; }
+#book:fullscreen .book-stage { gap: 8px; }
 #book:fullscreen .book-exit {
   display: inline-block; position: fixed; top: 14px; right: 16px; z-index: 20;
   font-family: var(--sans); font-weight: 600; font-size: 13px;
