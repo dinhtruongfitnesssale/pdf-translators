@@ -1,0 +1,22 @@
+{
+  "name": "pdf-translator",
+  "version": "1.0.0",
+  "description": "Web app: read English PDFs, translate to Vietnamese with your own translation skills, dual-pane, editable, book reader, export to PDF.",
+  "private": true,
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
+    "express": "^5.2.1",
+    "pdfkit": "^0.19.1"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "^6.1.200"
+  }
+}
