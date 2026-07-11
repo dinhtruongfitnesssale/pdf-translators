@@ -148,6 +148,60 @@ body {
 .keyhint-card { max-width: 620px; width: 100%; }
 .keyhint-card h2 { font-family: var(--serif); font-size: 26px; margin: 8px 0 4px; }
 
+/* ---------- Thư viện (tối đa 3 tài liệu lưu trong máy) ---------- */
+.library {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 22px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lib-head { display: flex; align-items: baseline; gap: 10px; }
+.lib-count { font-family: var(--mono); font-size: 12px; color: var(--slate); }
+.lib-shelf { display: flex; flex-wrap: wrap; gap: 10px; }
+.doc-chip {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff9;
+  overflow: hidden;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.doc-chip:hover { border-color: var(--ink); }
+.doc-chip.active { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(181, 101, 30, 0.16); }
+.doc-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  padding: 8px 6px 8px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.doc-ic { font-size: 15px; line-height: 1; }
+.doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-chip.active .doc-name { color: var(--amber); }
+.doc-remove {
+  align-self: stretch;
+  width: 30px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--line);
+  color: var(--slate);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  transition: background .15s ease, color .15s ease;
+}
+.doc-remove:hover { background: rgba(163, 58, 42, 0.10); color: var(--clay); }
+
 /* ---------- Empty state ---------- */
 .empty { display: flex; justify-content: center; padding: 60px 22px; }
 .empty-card { max-width: 620px; }

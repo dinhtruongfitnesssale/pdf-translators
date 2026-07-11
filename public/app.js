@@ -42,6 +42,7 @@ const statusEl = $('status');
 const emptyEl = $('empty');
 const pagesEl = $('pages');
 const keyhintEl = $('keyhint');
+const libraryEl = $('library');
 // Modal chọn phạm vi
 const modalEl = $('modal');
 const modalTotalEl = $('modalTotal');
@@ -152,6 +153,103 @@ async function idbDel(key) {
 // Nhớ TRANG đang đọc (bền hơn toạ độ px khi render lại / đổi chế độ xem)
 const pageKey = (id) => `ptr.page.${id}`;
 const tPageKey = (id) => `ptr.tpage.${id}`; // vị trí đang đọc ở chế độ sách-bản-dịch
+
+// ---------- Thư viện: tối đa 3 tài liệu lưu trong máy (IndexedDB) ----------
+// Bytes của mỗi PDF nằm trong IndexedDB theo khóa = docId (`name::size`).
+// Danh mục nhẹ (tên/kích thước/lần mở gần nhất) để liệt kê nhanh nằm ở localStorage.
+const MAX_DOCS = 3;
+const LIB_KEY = 'ptr.library';
+const LAST_DOC_KEY = 'ptr.lastDoc';
+const makeId = (name, size) => `${name}::${size}`;
+
+function loadLibrary() {
+  try { return JSON.parse(localStorage.getItem(LIB_KEY) || '[]'); } catch { return []; }
+}
+function saveLibrary(list) { localStorage.setItem(LIB_KEY, JSON.stringify(list)); }
+// Thêm mới hoặc cập nhật thời điểm mở gần nhất
+function upsertLibrary(meta) {
+  const list = loadLibrary();
+  const i = list.findIndex((d) => d.id === meta.id);
+  const now = Date.now();
+  if (i >= 0) list[i] = { ...list[i], ...meta, lastOpened: now };
+  else list.push({ ...meta, addedAt: now, lastOpened: now });
+  saveLibrary(list);
+  return list;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderLibrary() {
+  const list = loadLibrary().slice().sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
+  if (!list.length) { libraryEl.hidden = true; libraryEl.innerHTML = ''; return; }
+  libraryEl.hidden = false;
+  const chips = list.map((d) => {
+    const title = d.name.replace(/\.pdf$/i, '');
+    const active = d.id === docId;
+    const idAttr = escapeHtml(d.id);
+    return `<div class="doc-chip${active ? ' active' : ''}" title="${escapeHtml(title)}">
+      <button class="doc-open" type="button" data-id="${idAttr}">
+        <span class="doc-ic" aria-hidden="true">📄</span><span class="doc-name">${escapeHtml(title)}</span>
+      </button>
+      <button class="doc-remove" type="button" data-remove="${idAttr}" title="Gỡ khỏi thư viện" aria-label="Gỡ ${escapeHtml(title)}">✕</button>
+    </div>`;
+  }).join('');
+  libraryEl.innerHTML =
+    `<div class="lib-head"><span class="eyebrow">THƯ VIỆN</span>` +
+    `<span class="lib-count">${list.length}/${MAX_DOCS} tài liệu</span></div>` +
+    `<div class="lib-shelf">${chips}</div>`;
+}
+
+// Mở một tài liệu đã lưu trong thư viện
+async function openFromLibrary(id) {
+  if (id === docId) return; // đang mở sẵn rồi
+  try {
+    const rec = await idbGet(id);
+    if (!rec || !rec.bytes) {
+      setStatus('Không tìm thấy dữ liệu tài liệu (có thể đã bị xóa).', 'error');
+      return;
+    }
+    setStatus('Đang mở tài liệu…', 'working');
+    upsertLibrary({ id, name: rec.name, size: rec.size });
+    localStorage.setItem(LAST_DOC_KEY, id);
+    await openFromBytes(rec.bytes, rec.name, rec.size, false);
+    renderLibrary();
+  } catch (e) {
+    setStatus('Không mở được tài liệu: ' + e.message, 'error');
+  }
+}
+
+// Gỡ hẳn một tài liệu: xóa bytes + bản dịch + vị trí đọc khỏi trình duyệt
+async function removeDoc(id) {
+  const meta = loadLibrary().find((d) => d.id === id);
+  const title = meta ? meta.name.replace(/\.pdf$/i, '') : 'tài liệu';
+  if (!confirm(`Gỡ “${title}” khỏi thư viện?\nBản dịch và vị trí đọc của tài liệu này sẽ bị xóa khỏi máy.`)) return;
+  try { await idbDel(id); } catch {}
+  saveLibrary(loadLibrary().filter((d) => d.id !== id));
+  localStorage.removeItem(trKey(id));
+  localStorage.removeItem(pageKey(id));
+  localStorage.removeItem(tPageKey(id));
+  if (localStorage.getItem(LAST_DOC_KEY) === id) localStorage.removeItem(LAST_DOC_KEY);
+  if (id === docId) await closeDoc(); // đang mở thì đóng khung xem luôn
+  renderLibrary();
+  setStatus(`Đã gỡ “${title}” khỏi thư viện.`, '');
+}
+
+// Di trú dữ liệu phiên cũ (chỉ lưu 1 file dưới khóa 'last') sang thư viện mới
+async function migrateLegacyLast() {
+  if (loadLibrary().length) return;
+  let rec;
+  try { rec = await idbGet('last'); } catch { return; }
+  if (!rec || !rec.bytes) return;
+  const id = makeId(rec.name, rec.size);
+  try { await idbSet(id, { id, name: rec.name, size: rec.size, bytes: rec.bytes }); } catch { return; }
+  upsertLibrary({ id, name: rec.name, size: rec.size });
+  localStorage.setItem(LAST_DOC_KEY, id);
+  try { await idbDel('last'); } catch {}
+}
 let scrollTimer = null;
 let suppressScrollSave = false;
 
@@ -301,10 +399,21 @@ async function loadConfig() {
 
 // ---------- Open & render PDF ----------
 async function openFile(file) {
+  const id = makeId(file.name, file.size);
+  const lib = loadLibrary();
+  const known = lib.some((d) => d.id === id);
+  // Đã đủ 3 tài liệu và đây là file mới → chặn, mời gỡ bớt trước
+  if (!known && lib.length >= MAX_DOCS) {
+    setStatus(`Thư viện đã đủ ${MAX_DOCS} tài liệu. Hãy gỡ bớt một tài liệu rồi mở lại.`, 'error');
+    return;
+  }
   const ab = await file.arrayBuffer();
-  // Lưu file để refresh vẫn mở lại được (không rời máy bạn — nằm trong trình duyệt).
-  try { await idbSet('last', { name: file.name, size: file.size, bytes: ab }); } catch {}
+  // Lưu file vào thư viện để mở lại bất cứ lúc nào (không rời máy bạn — nằm trong trình duyệt).
+  try { await idbSet(id, { id, name: file.name, size: file.size, bytes: ab }); } catch {}
+  upsertLibrary({ id, name: file.name, size: file.size });
+  localStorage.setItem(LAST_DOC_KEY, id);
   await openFromBytes(ab, file.name, file.size, false);
+  renderLibrary();
 }
 
 async function openFromBytes(ab, name, size, restoring) {
@@ -746,7 +855,8 @@ function setZoom(next) {
 
 // ---------- Đóng tài liệu ----------
 async function closeDoc() {
-  try { await idbDel('last'); } catch {}
+  // "Đóng" chỉ đóng khung xem — tài liệu vẫn nằm trong thư viện để mở lại.
+  localStorage.removeItem(LAST_DOC_KEY);
   pages.length = 0;
   pdfDoc = null;
   docId = null;
@@ -764,15 +874,21 @@ async function closeDoc() {
   pageTotalEl.textContent = '—';
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   closeRangeModal();
+  renderLibrary(); // bỏ đánh dấu tài liệu đang mở
   setStatus('Đã đóng tài liệu.', '');
 }
 
-async function restoreLast() {
+async function restoreLastDoc() {
+  await migrateLegacyLast(); // đưa dữ liệu phiên cũ vào thư viện (nếu có)
+  renderLibrary();
+  const id = localStorage.getItem(LAST_DOC_KEY);
+  if (!id) return; // không có tài liệu đang mở dở → hiện thư viện + màn hình trống
   try {
-    const rec = await idbGet('last');
+    const rec = await idbGet(id);
     if (!rec || !rec.bytes) return;
     setStatus('Đang mở lại tài liệu phiên trước…', 'working');
     await openFromBytes(rec.bytes, rec.name, rec.size, true);
+    renderLibrary();
   } catch (e) {
     setStatus('Không mở lại được tài liệu trước: ' + e.message, 'error');
   }
@@ -1033,6 +1149,14 @@ translateBtn.addEventListener('click', openRangeModal);
 exportBtn.addEventListener('click', exportPdf);
 closeBtn.addEventListener('click', closeDoc);
 
+// Thư viện: bấm tên để mở, bấm ✕ để gỡ
+libraryEl.addEventListener('click', (e) => {
+  const rem = e.target.closest('[data-remove]');
+  if (rem) { removeDoc(rem.getAttribute('data-remove')); return; }
+  const open = e.target.closest('.doc-open');
+  if (open) openFromLibrary(open.getAttribute('data-id'));
+});
+
 // Modal
 modalGoBtn.addEventListener('click', confirmRange);
 modalCancelBtn.addEventListener('click', closeRangeModal);
@@ -1094,4 +1218,4 @@ zoom = Math.min(3, Math.max(0.5, Number(localStorage.getItem('ptr.zoom')) || 1))
 applyZoomVar();
 setMode(localStorage.getItem('ptr.mode') || 'both');
 setReadMode(localStorage.getItem('ptr.readmode') || 'scroll');
-restoreLast();
+restoreLastDoc();
