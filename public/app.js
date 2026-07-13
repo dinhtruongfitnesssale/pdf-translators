@@ -73,7 +73,8 @@ let bookIndex = 0; // trang bên trái (0-based) ở chế độ Đọc sách
 let transPages = []; // bản dịch đã dàn thành từng trang (chuỗi)
 let transSig = ''; // chữ ký để cache kết quả dàn trang
 let zoom = 1; // 0.5 – 3
-const pages = []; // { index, pageNum, canvas, origEl, transEl, sourceText, editor, statEl }
+const pages = []; // { index, pageNum, canvas, origEl, transEl, sourceText, editor, statEl, aspect, rendered }
+let renderObserver = null; // vẽ canvas trễ khi trang cuộn tới gần khung nhìn
 
 // ---------- Settings persistence ----------
 const SETTINGS_KEY = 'ptr.settings';
@@ -295,12 +296,15 @@ function restoreReadingPosition(idx) {
   const tick = () => {
     if (cancelled || docId == null) return;
     scrollToPage(idx);
+    renderVisible(); // vẽ các trang quanh vị trí đang đọc
     if (performance.now() - start < 2000) setTimeout(() => requestAnimationFrame(tick), 90);
     else suppressScrollSave = false;
   };
   requestAnimationFrame(tick);
   if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(() => { if (!cancelled && docId != null) scrollToPage(idx); });
+    document.fonts.ready.then(() => {
+      if (!cancelled && docId != null) { scrollToPage(idx); renderVisible(); }
+    });
   }
 }
 
@@ -358,7 +362,9 @@ window.addEventListener('resize', () => {
     if (readMode === 'book') { renderBook(); return; }
     if (viewMode === 'trans') return;
     const keep = currentTopPage();
-    renderAllCanvases().then(() => scrollToPage(keep));
+    reserveAll();
+    scrollToPage(keep);
+    renderVisible();
   }, 200);
 });
 
@@ -435,9 +441,17 @@ async function openFromBytes(ab, name, size, restoring) {
 
   setStatus(`Đang mở ${pdf.numPages} trang…`);
 
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
+  // Tỉ lệ khung trang (dùng trang 1 làm mặc định để chừa đúng chỗ trước khi vẽ)
+  let defAspect = 1.414; // A4 dọc mặc định
+  try {
+    const v = (await pdf.getPage(1)).getViewport({ scale: 1 });
+    defAspect = v.height / v.width;
+  } catch {}
 
+  // Dựng khung tất cả các trang NGAY (không vẽ, không trích chữ) → mở gần như tức thì.
+  // Canvas được chừa đúng chiều cao qua reserveAll(); pixel vẽ trễ khi cuộn tới.
+  const frag = document.createDocumentFragment();
+  for (let i = 1; i <= pdf.numPages; i++) {
     // --- left: original ---
     const orig = document.createElement('div');
     orig.className = 'orig';
@@ -446,7 +460,7 @@ async function openFromBytes(ab, name, size, restoring) {
     tag.textContent = `Trang ${i} / ${pdf.numPages}`;
     const canvas = document.createElement('canvas');
     orig.append(tag, canvas);
-    pagesEl.appendChild(orig);
+    frag.appendChild(orig);
 
     // --- right: translation ---
     const trans = document.createElement('div');
@@ -468,19 +482,16 @@ async function openFromBytes(ab, name, size, restoring) {
     editor.spellcheck = false;
     bar.append(pnum, retro, pstat);
     trans.append(bar, editor);
-    pagesEl.appendChild(trans);
-
-    // render canvas sized to the current column width
-    await renderPage(page, canvas, orig);
-
-    // extract source text
-    const sourceText = await extractText(page);
+    frag.appendChild(trans);
 
     const entry = {
       index: i - 1, pageNum: i, canvas,
       origEl: orig, transEl: trans,
-      sourceText, editor, statEl: pstat,
+      sourceText: null, // trích chữ trễ (chỉ khi cần dịch)
+      editor, statEl: pstat,
+      aspect: defAspect, rendered: false, renderSig: '', renderingSig: null,
     };
+    orig._entry = entry;
     pages.push(entry);
 
     // restore saved translation
@@ -491,9 +502,11 @@ async function openFromBytes(ab, name, size, restoring) {
 
     editor.addEventListener('input', () => saveTranslation(docId, entry.index, editor.textContent));
     retro.addEventListener('click', () => translateOne(entry, true));
-
-    setStatus(`Đang mở… ${i}/${pdf.numPages}`);
   }
+  pagesEl.appendChild(frag);
+
+  reserveAll();            // chừa đúng chiều cao mỗi trang → nhảy tới trang đang đọc là chuẩn ngay
+  setupRenderObserver();   // vẽ trang theo nhu cầu khi cuộn tới (nhanh + nhẹ RAM)
 
   setStatus(restoring ? `Đã mở lại ${pdf.numPages} trang (phiên trước).` : `Đã mở ${pdf.numPages} trang.`, 'done');
   translateBtn.disabled = false;
@@ -513,31 +526,81 @@ async function openFromBytes(ab, name, size, restoring) {
   else restoreReadingPosition(savedPage);
 }
 
-// ---------- Re-render canvases (khi đổi chế độ / đổi kích thước) ----------
-let renderToken = 0;
-async function renderAllCanvases() {
-  if (!pdfDoc) return;
-  const token = ++renderToken;
-  for (const e of pages) {
-    if (token !== renderToken) return; // đã có lượt render mới
-    if (!e.origEl || e.origEl.clientWidth < 10) continue; // đang ẩn thì bỏ qua
+// ---------- Vẽ canvas theo nhu cầu (lazy): chỉ vẽ trang gần khung nhìn ----------
+// Chiều rộng (CSS px) một trang sẽ chiếm — mọi .orig cùng chế độ đều bằng nhau
+function colBoxWidth() {
+  const w = pages.length ? (pages[0].origEl.clientWidth || 480) : 480;
+  return Math.max(200, w) * zoom;
+}
+// Chữ ký kích thước để biết canvas đã vẽ có còn hợp lệ không (đổi zoom/độ rộng → vẽ lại)
+function renderSigFor() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  return Math.round(colBoxWidth()) + 'x' + dpr;
+}
+// Chừa chỗ (chiều cao) cho một trang chưa vẽ, đúng bằng khổ khi vẽ xong → không giật layout
+function reservePlaceholder(e, boxW) {
+  if (!e.canvas) return;
+  e.canvas.style.width = boxW + 'px';
+  e.canvas.style.height = (boxW * e.aspect) + 'px';
+}
+// Chừa lại chỗ cho MỌI trang theo layout/zoom hiện tại và đánh dấu cần vẽ lại
+function reserveAll() {
+  if (!pdfDoc || viewMode === 'trans' || readMode === 'book') return;
+  const boxW = colBoxWidth();
+  for (const e of pages) { e.rendered = false; e.renderSig = ''; reservePlaceholder(e, boxW); }
+}
+// Vẽ pixel cho một trang nếu chưa vẽ / kích thước đã đổi
+async function ensureRendered(e) {
+  if (!pdfDoc || viewMode === 'trans' || readMode === 'book') return;
+  if (!e.origEl || e.origEl.clientWidth < 10) return; // đang ẩn thì bỏ qua
+  const sig = renderSigFor();
+  if (e.rendered && e.renderSig === sig) return;
+  if (e.renderingSig === sig) return; // đang vẽ dở đúng kích thước này
+  e.renderingSig = sig;
+  try {
     const page = await pdfDoc.getPage(e.pageNum);
-    if (token !== renderToken) return;
+    const v = page.getViewport({ scale: 1 });
+    e.aspect = v.height / v.width; // tỉ lệ thật của trang (phòng trang khác khổ)
     await renderPage(page, e.canvas, e.origEl);
+    e.rendered = true;
+    e.renderSig = sig;
+  } catch {}
+  finally { e.renderingSig = null; }
+}
+// Vẽ những trang đang (gần) trong khung nhìn
+function renderVisible() {
+  if (!pdfDoc || viewMode === 'trans' || readMode === 'book') return;
+  const vh = window.innerHeight;
+  const m = vh; // chừa 1 màn hình trên/dưới
+  for (const e of pages) {
+    if (!e.origEl) continue;
+    const r = e.origEl.getBoundingClientRect();
+    if (r.bottom > -m && r.top < vh + m) ensureRendered(e);
   }
+}
+// Quan sát cuộn để tự vẽ trang khi tới gần
+function setupRenderObserver() {
+  if (renderObserver) renderObserver.disconnect();
+  renderObserver = new IntersectionObserver((ents) => {
+    for (const it of ents) {
+      if (it.isIntersecting && it.target._entry) ensureRendered(it.target._entry);
+    }
+  }, { rootMargin: '1200px 0px' });
+  for (const e of pages) renderObserver.observe(e.origEl);
 }
 
 // ---------- Chế độ xem ----------
 function applyScrollLayout(keep) {
   pagesEl.className = 'pages' + (viewMode !== 'both' ? ' mode-' + viewMode : '');
-  const after = () => {
+  // rAF để layout (đổi độ rộng cột theo chế độ) áp dụng xong rồi mới đo/chừa chỗ
+  requestAnimationFrame(() => {
+    if (pdfDoc && viewMode !== 'trans') reserveAll(); // chừa chiều cao theo layout mới
     if (docId && pages.length) {
       scrollToPage(keep);
       localStorage.setItem(pageKey(docId), String(keep));
     }
-  };
-  if (pdfDoc && viewMode !== 'trans') renderAllCanvases().then(after);
-  else requestAnimationFrame(after);
+    renderVisible();
+  });
 }
 
 function setMode(mode) {
@@ -856,7 +919,9 @@ function setZoom(next) {
   localStorage.setItem('ptr.zoom', String(zoom));
   if (readMode === 'book') { if (pdfDoc) renderBook(); return; }
   if (pdfDoc && viewMode !== 'trans') {
-    renderAllCanvases().then(() => { if (docId && pages.length) scrollToPage(keep); });
+    reserveAll(); // đổi zoom → chừa lại chiều cao theo khổ mới
+    if (docId && pages.length) scrollToPage(keep);
+    renderVisible();
   } else if (docId && pages.length) {
     requestAnimationFrame(() => scrollToPage(keep));
   }
@@ -866,6 +931,7 @@ function setZoom(next) {
 async function closeDoc() {
   // "Đóng" chỉ đóng khung xem — tài liệu vẫn nằm trong thư viện để mở lại.
   localStorage.removeItem(LAST_DOC_KEY);
+  if (renderObserver) { renderObserver.disconnect(); renderObserver = null; }
   pages.length = 0;
   pdfDoc = null;
   docId = null;
@@ -1021,11 +1087,23 @@ async function extractText(page) {
 }
 
 // ---------- Translate ----------
+// Trích chữ theo nhu cầu (mở tài liệu không còn trích sẵn mọi trang → mở nhanh hơn)
+async function getSourceText(entry) {
+  if (entry.sourceText != null) return entry.sourceText;
+  try {
+    const page = await pdfDoc.getPage(entry.pageNum);
+    entry.sourceText = await extractText(page);
+  } catch { entry.sourceText = ''; }
+  return entry.sourceText;
+}
+
 async function translateOne(entry, force = false) {
   const apiKey = apiKeyEl.value.trim();
   if (!apiKey) { setStatus('Chưa nhập API key.', 'error'); apiKeyEl.focus(); return false; }
-  if (!entry.sourceText) { setPageStat(entry.statEl, 'trống', ''); return true; }
   if (!force && entry.editor.textContent.trim()) return true;
+
+  const sourceText = await getSourceText(entry);
+  if (!sourceText) { setPageStat(entry.statEl, 'trống', ''); return true; }
 
   setPageStat(entry.statEl, 'đang dịch…', 'working');
   try {
@@ -1037,7 +1115,7 @@ async function translateOne(entry, force = false) {
         apiKey,
         model: modelEl.value.trim(),
         skill: skillEl.value,
-        text: entry.sourceText,
+        text: sourceText,
       }),
     });
     const data = await r.json();
