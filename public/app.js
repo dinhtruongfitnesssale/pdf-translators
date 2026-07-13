@@ -56,6 +56,49 @@ const rangeAllEl = $('rangeAll');
 const modalHintEl = $('modalHint');
 const modalGoBtn = $('modalGo');
 const modalCancelBtn = $('modalCancel');
+// Modal xác nhận (dùng chung)
+const confirmEl = $('confirmModal');
+const confirmEyebrowEl = $('confirmEyebrow');
+const confirmTitleEl = $('confirmTitle');
+const confirmMsgEl = $('confirmMsg');
+const confirmOkBtn = $('confirmOk');
+const confirmCancelBtn = $('confirmCancel');
+
+// Hộp xác nhận theo bộ thương hiệu, thay cho confirm() mặc định của trình duyệt.
+// Trả về Promise<boolean>. Đóng bằng Esc / bấm nền = Hủy.
+function confirmDialog({ title, message = '', eyebrow = 'XÁC NHẬN', okText = 'Xóa', cancelText = 'Hủy', danger = true } = {}) {
+  confirmEyebrowEl.textContent = eyebrow;
+  confirmTitleEl.textContent = title;
+  confirmMsgEl.textContent = message;
+  confirmMsgEl.hidden = !message;
+  confirmOkBtn.textContent = okText;
+  confirmCancelBtn.textContent = cancelText;
+  confirmOkBtn.className = danger ? 'btn btn-danger' : 'btn btn-primary';
+  confirmEl.hidden = false;
+  confirmOkBtn.focus();
+
+  return new Promise((resolve) => {
+    function cleanup(result) {
+      confirmEl.hidden = true;
+      confirmOkBtn.removeEventListener('click', onOk);
+      confirmCancelBtn.removeEventListener('click', onCancel);
+      confirmEl.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKey);
+      resolve(result);
+    }
+    function onOk() { cleanup(true); }
+    function onCancel() { cleanup(false); }
+    function onBackdrop(e) { if (e.target === confirmEl) cleanup(false); }
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); cleanup(false); }
+      else if (e.key === 'Enter') { e.preventDefault(); cleanup(true); }
+    }
+    confirmOkBtn.addEventListener('click', onOk);
+    confirmCancelBtn.addEventListener('click', onCancel);
+    confirmEl.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKey);
+  });
+}
 
 // Đừng để trình duyệt tự khôi phục cuộn (nó reset về 0 và cãi với code của mình)
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
@@ -241,7 +284,14 @@ async function openFromLibrary(id) {
 async function removeDoc(id) {
   const meta = loadLibrary().find((d) => d.id === id);
   const title = meta ? meta.name.replace(/\.pdf$/i, '') : 'tài liệu';
-  if (!confirm(`Gỡ “${title}” khỏi thư viện?\nBản dịch và vị trí đọc của tài liệu này sẽ bị xóa khỏi máy.`)) return;
+  const ok = await confirmDialog({
+    eyebrow: 'GỠ TÀI LIỆU',
+    title: `Gỡ “${title}” khỏi thư viện?`,
+    message: 'Bản dịch và vị trí đọc của tài liệu này sẽ bị xóa khỏi máy.',
+    okText: 'Gỡ tài liệu',
+    cancelText: 'Giữ lại',
+  });
+  if (!ok) return;
   try { await idbDel(id); } catch {}
   saveLibrary(loadLibrary().filter((d) => d.id !== id));
   localStorage.removeItem(trKey(id));

@@ -136,6 +136,8 @@ body {
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn-primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .btn-primary:hover:not(:disabled) { background: #23201b; }
+.btn-danger { background: var(--clay); color: var(--paper); border-color: var(--clay); }
+.btn-danger:hover:not(:disabled) { background: #8f3224; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .viewmode { display: inline-flex; border: 1px solid var(--ink); border-radius: 8px; overflow: hidden; }
@@ -470,3 +472,5 @@ body {
 .modal-hint.error { color: var(--clay); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
 .modal input:disabled, .modal .field:has(input:disabled) span { opacity: 0.45; }
+.modal-confirm .modal-sub { white-space: pre-line; margin-bottom: 4px; }
+.modal-confirm .modal-actions { margin-top: 20px; }

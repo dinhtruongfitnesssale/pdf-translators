@@ -169,6 +169,19 @@
     </div>
   </div>
 
+  <!-- Modal xác nhận (dùng chung, ví dụ khi gỡ tài liệu) -->
+  <div id="confirmModal" class="modal-overlay" hidden>
+    <div class="modal modal-confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMsg">
+      <span class="eyebrow" id="confirmEyebrow">XÁC NHẬN</span>
+      <h2 id="confirmTitle">Bạn chắc chứ?</h2>
+      <p class="modal-sub" id="confirmMsg"></p>
+      <div class="modal-actions">
+        <button id="confirmCancel" class="btn" type="button">Hủy</button>
+        <button id="confirmOk" class="btn btn-danger" type="button">Xóa</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="/app.js"></script>
 </body>
 </html>
