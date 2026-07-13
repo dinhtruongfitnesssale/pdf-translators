@@ -155,6 +155,16 @@ async function idbDel(key) {
   });
 }
 
+// Xin trình duyệt KHÔNG tự xóa dữ liệu khi máy thiếu bộ nhớ.
+// Sau khi được cấp, IndexedDB/localStorage chỉ mất khi người dùng chủ động xóa.
+async function requestPersistentStorage() {
+  try {
+    if (!navigator.storage || !navigator.storage.persist) return;
+    if (await navigator.storage.persisted()) return; // đã bền sẵn
+    await navigator.storage.persist();
+  } catch {}
+}
+
 // Nhớ TRANG đang đọc (bền hơn toạ độ px khi render lại / đổi chế độ xem)
 const pageKey = (id) => `ptr.page.${id}`;
 const tPageKey = (id) => `ptr.tpage.${id}`; // vị trí đang đọc ở chế độ sách-bản-dịch
@@ -1327,4 +1337,5 @@ zoom = Math.min(3, Math.max(0.5, Number(localStorage.getItem('ptr.zoom')) || 1))
 applyZoomVar();
 setMode(localStorage.getItem('ptr.mode') || 'both');
 setReadMode(localStorage.getItem('ptr.readmode') || 'scroll');
+requestPersistentStorage();
 restoreLastDoc();
