@@ -105,6 +105,17 @@ body {
 }
 .field input:focus, .field select:focus { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(181,101,30,0.14); }
 
+/* Ô API key: nút Hiện/Ẩn nằm bên phải ô nhập */
+.key-wrap { position: relative; display: flex; }
+.key-wrap input { flex: 1; width: 100%; padding-right: 52px; }
+.key-eye {
+  position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+  border: none; background: none; cursor: pointer;
+  font-family: var(--sans); font-size: 12px; font-weight: 600;
+  color: var(--amber); padding: 4px 6px; border-radius: 6px;
+}
+.key-eye:hover { background: rgba(181,101,30,0.12); }
+
 .check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--slate); padding-bottom: 8px; }
 .check input { accent-color: var(--amber); }
 

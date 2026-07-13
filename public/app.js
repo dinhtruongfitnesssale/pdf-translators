@@ -9,6 +9,7 @@ const modelEl = $('model');
 const modelList = $('modelList');
 const skillEl = $('skill');
 const rememberEl = $('rememberKey');
+const toggleKeyEl = $('toggleKey');
 const fileInput = $('fileInput');
 const openBtn = $('openBtn');
 const translateBtn = $('translateBtn');
@@ -1274,6 +1275,14 @@ providerEl.addEventListener('change', () => { applyModelSuggest(); saveSettings(
 [apiKeyEl, modelEl, skillEl, rememberEl].forEach((el) =>
   el.addEventListener('change', saveSettings));
 apiKeyEl.addEventListener('input', updateKeyHint);
+// Ẩn / hiện API key
+if (toggleKeyEl) toggleKeyEl.addEventListener('click', () => {
+  const show = apiKeyEl.type === 'password';
+  apiKeyEl.type = show ? 'text' : 'password';
+  toggleKeyEl.textContent = show ? 'Ẩn' : 'Hiện';
+  toggleKeyEl.setAttribute('aria-pressed', String(show));
+  toggleKeyEl.setAttribute('aria-label', show ? 'Ẩn key' : 'Hiện key');
+});
 viewmodeEl.addEventListener('click', (e) => {
   const b = e.target.closest('.seg');
   if (b) { setMode(b.dataset.mode); closeNav(); }

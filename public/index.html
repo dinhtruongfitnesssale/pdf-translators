@@ -34,7 +34,10 @@
 
       <label class="field grow">
         <span>API key</span>
-        <input id="apiKey" type="password" placeholder="Dán API key vào đây" autocomplete="off" />
+        <span class="key-wrap">
+          <input id="apiKey" type="password" placeholder="Dán API key vào đây" autocomplete="off" />
+          <button id="toggleKey" type="button" class="key-eye" aria-label="Hiện key" aria-pressed="false" title="Hiện / ẩn key">Hiện</button>
+        </span>
       </label>
 
       <label class="field">
