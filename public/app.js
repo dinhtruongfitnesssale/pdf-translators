@@ -153,10 +153,198 @@ const trKey = (id) => `ptr.tr.${id}`;
 function loadTranslations(id) {
   try { return JSON.parse(localStorage.getItem(trKey(id)) || '{}'); } catch { return {}; }
 }
-function saveTranslation(id, idx, text) {
+function saveTranslation(id, idx, value) {
   const all = loadTranslations(id);
-  all[idx] = text;
-  localStorage.setItem(trKey(id), JSON.stringify(all));
+  all[idx] = value;
+  try {
+    localStorage.setItem(trKey(id), JSON.stringify(all));
+    return true;
+  } catch (e) {
+    setStatus('Không lưu được: bộ nhớ trình duyệt đã đầy (ảnh chèn quá nặng). Hãy xoá bớt ảnh hoặc gỡ bớt tài liệu.', 'error');
+    return false;
+  }
+}
+
+// ---------- Mô hình khối bản dịch (chữ + ảnh, theo thứ tự) ----------
+// Mỗi trang bản dịch là một danh sách khối:
+//   { type:'text', text }            — một đoạn chữ có thể chỉnh sửa
+//   { type:'image', src, w, h }      — một ảnh (data URL) chèn giữa các đoạn
+// Lưu gọn: trang chỉ có 1 khối chữ vẫn lưu dạng chuỗi (tương thích bản cũ).
+function normalizeBlocks(saved) {
+  if (saved == null) return [{ type: 'text', text: '' }];
+  if (typeof saved === 'string') return [{ type: 'text', text: saved }];
+  if (Array.isArray(saved)) {
+    const out = [];
+    for (const b of saved) {
+      if (!b) continue;
+      if (b.type === 'image' && b.src) out.push({ type: 'image', src: b.src, w: b.w || 0, h: b.h || 0 });
+      else if (b.type === 'text') out.push({ type: 'text', text: String(b.text || '') });
+    }
+    return out.length ? out : [{ type: 'text', text: '' }];
+  }
+  return [{ type: 'text', text: '' }];
+}
+function serializeBlocks(blocks) {
+  if (blocks.length === 1 && blocks[0].type === 'text') return blocks[0].text; // gọn + hợp bản cũ
+  return blocks;
+}
+function entryPlainText(entry) {
+  return entry.blocks.filter((b) => b.type === 'text')
+    .map((b) => (b.text || '').trim()).filter(Boolean).join('\n\n');
+}
+function entryHasContent(entry) {
+  return entry.blocks.some((b) => (b.type === 'text' && b.text.trim()) || b.type === 'image');
+}
+function savePageTranslation(entry) {
+  return saveTranslation(docId, entry.index, serializeBlocks(entry.blocks));
+}
+
+// Đặt kết quả dịch vào KHỐI CHỮ đầu tiên (giữ nguyên ảnh/khối đã chèn tay).
+function setEntryTranslation(entry, text) {
+  const first = entry.blocks.find((b) => b.type === 'text');
+  if (first) first.text = text;
+  else entry.blocks.unshift({ type: 'text', text });
+  renderBlocks(entry);
+  savePageTranslation(entry);
+}
+
+// Dựng lại DOM các khối cho một trang (gọi khi thêm/xoá/đổi thứ tự khối).
+// Chỉnh chữ chỉ cập nhật mô hình, KHÔNG dựng lại (giữ con trỏ nhập).
+function renderBlocks(entry) {
+  const wrap = entry.blocksEl;
+  wrap.innerHTML = '';
+  entry.blocks.forEach((block, k) => {
+    const row = document.createElement('div');
+    row.className = 'block block-' + block.type;
+    if (block.type === 'text') {
+      const ed = document.createElement('div');
+      ed.className = 'editor';
+      ed.contentEditable = 'true';
+      ed.spellcheck = false;
+      ed.textContent = block.text || '';
+      ed.addEventListener('input', () => {
+        block.text = ed.textContent;
+        savePageTranslation(entry);
+      });
+      row.appendChild(ed);
+    } else {
+      const img = document.createElement('img');
+      img.className = 'block-img';
+      img.src = block.src;
+      img.alt = 'Ảnh chèn';
+      row.appendChild(img);
+    }
+    row.appendChild(buildBlockControls(entry, k));
+    wrap.appendChild(row);
+  });
+}
+
+function buildBlockControls(entry, k) {
+  const bar = document.createElement('div');
+  bar.className = 'block-ctrls';
+  const mk = (label, title, fn, cls) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'bc' + (cls ? ' ' + cls : '');
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', fn);
+    return b;
+  };
+  bar.append(
+    mk('＋ Ảnh', 'Chèn ảnh ngay dưới khối này', () => insertImageAfter(entry, k)),
+    mk('＋ Chữ', 'Thêm ô chữ ngay dưới khối này', () => insertTextAfter(entry, k)),
+    mk('↑', 'Đưa khối lên', () => moveBlock(entry, k, -1)),
+    mk('↓', 'Đưa khối xuống', () => moveBlock(entry, k, 1)),
+    mk('✕', 'Xoá khối này', () => removeBlock(entry, k), 'bc-del'),
+  );
+  return bar;
+}
+
+function insertTextAfter(entry, k) {
+  entry.blocks.splice(k + 1, 0, { type: 'text', text: '' });
+  renderBlocks(entry);
+  savePageTranslation(entry);
+  const row = entry.blocksEl.children[k + 1];
+  const ed = row && row.querySelector('.editor');
+  if (ed) ed.focus();
+}
+
+function moveBlock(entry, k, dir) {
+  const j = k + dir;
+  if (j < 0 || j >= entry.blocks.length) return;
+  const t = entry.blocks[k];
+  entry.blocks[k] = entry.blocks[j];
+  entry.blocks[j] = t;
+  renderBlocks(entry);
+  savePageTranslation(entry);
+}
+
+async function removeBlock(entry, k) {
+  const block = entry.blocks[k];
+  if (block && block.type === 'image') {
+    const ok = await confirmDialog({
+      eyebrow: 'XOÁ ẢNH',
+      title: 'Xoá ảnh đã chèn?',
+      message: 'Ảnh này sẽ bị gỡ khỏi bản dịch của trang.',
+      okText: 'Xoá ảnh', cancelText: 'Giữ lại',
+    });
+    if (!ok) return;
+  }
+  if (entry.blocks.length <= 1) entry.blocks = [{ type: 'text', text: '' }];
+  else entry.blocks.splice(k, 1);
+  renderBlocks(entry);
+  savePageTranslation(entry);
+}
+
+// Chọn ảnh từ máy → nén lại (tối đa 1600px, nền trắng, JPEG) cho nhẹ bộ nhớ.
+function pickImageFile() {
+  return new Promise((resolve) => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*';
+    inp.addEventListener('change', () => resolve((inp.files && inp.files[0]) || null), { once: true });
+    inp.click();
+  });
+}
+function fileToImageBlock(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(fr.error || new Error('Không đọc được ảnh'));
+    fr.onload = () => {
+      const im = new Image();
+      im.onerror = () => reject(new Error('Ảnh lỗi hoặc không hỗ trợ'));
+      im.onload = () => {
+        const MAX = 1600;
+        const scale = Math.min(1, MAX / Math.max(im.naturalWidth, im.naturalHeight));
+        const w = Math.max(1, Math.round(im.naturalWidth * scale));
+        const h = Math.max(1, Math.round(im.naturalHeight * scale));
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#ffffff';           // nền trắng phòng ảnh PNG trong suốt
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(im, 0, 0, w, h);
+        resolve({ type: 'image', src: cv.toDataURL('image/jpeg', 0.82), w, h });
+      };
+      im.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+async function insertImageAfter(entry, k) {
+  const file = await pickImageFile();
+  if (!file) return;
+  setPageStat(entry.statEl, 'đang xử lý ảnh…', 'working');
+  try {
+    const block = await fileToImageBlock(file);
+    entry.blocks.splice(k + 1, 0, block);
+    renderBlocks(entry);
+    if (savePageTranslation(entry)) setPageStat(entry.statEl, 'đã chèn ảnh', 'done');
+  } catch (err) {
+    setPageStat(entry.statEl, 'lỗi ảnh', 'error');
+    setStatus('Không chèn được ảnh: ' + err.message, 'error');
+  }
 }
 
 // ---------- Last-opened PDF (IndexedDB) + scroll position ----------
@@ -537,31 +725,26 @@ async function openFromBytes(ab, name, size, restoring) {
     retro.textContent = 'Dịch lại';
     const pstat = document.createElement('span');
     pstat.className = 'pstat';
-    const editor = document.createElement('div');
-    editor.className = 'editor';
-    editor.contentEditable = 'true';
-    editor.spellcheck = false;
+    const blocksEl = document.createElement('div');
+    blocksEl.className = 'blocks';
     bar.append(pnum, retro, pstat);
-    trans.append(bar, editor);
+    trans.append(bar, blocksEl);
     frag.appendChild(trans);
 
     const entry = {
       index: i - 1, pageNum: i, canvas,
       origEl: orig, transEl: trans,
       sourceText: null, // trích chữ trễ (chỉ khi cần dịch)
-      editor, statEl: pstat,
+      blocks: normalizeBlocks(saved[i - 1]), blocksEl, statEl: pstat,
       aspect: defAspect, rendered: false, renderSig: '', renderingSig: null,
     };
     orig._entry = entry;
     pages.push(entry);
+    renderBlocks(entry);
 
     // restore saved translation
-    if (saved[i - 1] != null) {
-      editor.textContent = saved[i - 1];
-      setPageStat(pstat, 'đã lưu', 'done');
-    }
+    if (entryHasContent(entry)) setPageStat(pstat, 'đã lưu', 'done');
 
-    editor.addEventListener('input', () => saveTranslation(docId, entry.index, editor.textContent));
     retro.addEventListener('click', () => translateOne(entry, true));
   }
   pagesEl.appendChild(frag);
@@ -681,34 +864,76 @@ function setMode(mode) {
 }
 
 // ---------- Chế độ Đọc sách ----------
-// Gom toàn bộ bản dịch (bỏ trang trống), nối bằng ngắt đoạn
-function fullTranslatedText() {
-  return pages.map((p) => (p.editor.textContent || '').trim()).filter(Boolean).join('\n\n');
+// Gom toàn bộ khối bản dịch của mọi trang thành một dòng chảy (chữ + ảnh) theo thứ tự
+function allBlocks() {
+  const out = [];
+  for (const p of pages) {
+    for (const b of p.blocks) {
+      if (b.type === 'text') {
+        const t = (b.text || '').trim();
+        if (t) out.push({ type: 'text', text: t });
+      } else if (b.type === 'image' && b.src) {
+        out.push({ type: 'image', src: b.src, w: b.w || 0, h: b.h || 0 });
+      }
+    }
+  }
+  return out;
+}
+// Chữ ký nội dung để biết có cần dàn lại trang không
+function blocksSignature(blocks) {
+  let s = '';
+  for (const b of blocks) s += b.type === 'text' ? ('t' + b.text.length) : ('i' + (b.src ? b.src.length : 0));
+  return s + '#' + blocks.length;
 }
 
-// Dàn chữ thành từng trang bằng cách đo chiều cao (nhị phân theo token)
-function paginateTranslation(text, contentW, contentH, fontPx, lineH) {
+// Dàn dòng chảy khối thành từng trang. Chữ có thể cắt sang trang mới; ảnh là
+// một khối nguyên (tự co để vừa khổ trang). Mỗi trang trả về là danh sách mảnh
+// { type:'text', text } | { type:'image', src, w, h } với w/h là kích thước hiển thị.
+function paginateBlocks(blocks, contentW, contentH, fontPx, lineH) {
   measEl.style.width = contentW + 'px';
   measEl.style.fontFamily = getComputedStyle(document.body).fontFamily;
   measEl.style.fontSize = fontPx + 'px';
   measEl.style.lineHeight = String(lineH);
-  const toks = text.split(/(\s+)/);
-  const join = (a, b) => toks.slice(a, b).join('');
+  const measure = (t) => { measEl.textContent = t; return measEl.scrollHeight; };
+  const gap = Math.round(fontPx * 0.7); // khoảng cách giữa hai khối
   const out = [];
-  let i = 0;
-  while (i < toks.length) {
-    let lo = i + 1, hi = toks.length, fit = i + 1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      measEl.textContent = join(i, mid);
-      if (measEl.scrollHeight <= contentH) { fit = mid; lo = mid + 1; }
-      else hi = mid - 1;
+  let cur = [];
+  let used = 0;
+  const flush = () => { if (cur.length) { out.push(cur); cur = []; used = 0; } };
+  const gapNow = () => (cur.length ? gap : 0);
+
+  for (const block of blocks) {
+    if (block.type === 'image') {
+      let dw = Math.min(contentW, block.w || contentW);
+      let dh = block.w ? (block.h * dw / block.w) : Math.min(contentH, contentW);
+      if (dh > contentH) { dw = dw * (contentH / dh); dh = contentH; } // cao quá 1 trang → co lại
+      if (cur.length && used + gapNow() + dh > contentH) flush();
+      used += gapNow() + dh;
+      cur.push({ type: 'image', src: block.src, w: Math.round(dw), h: Math.round(dh) });
+    } else {
+      const toks = block.text.split(/(\s+)/);
+      const join = (a, b) => toks.slice(a, b).join('');
+      let i = 0;
+      while (i < toks.length) {
+        const avail = contentH - used - gapNow();
+        if (cur.length && avail < fontPx * lineH) { flush(); continue; } // hết chỗ → sang trang
+        let lo = i + 1, hi = toks.length, fit = i + 1;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          if (measure(join(i, mid)) <= Math.max(avail, fontPx * lineH)) { fit = mid; lo = mid + 1; }
+          else hi = mid - 1;
+        }
+        if (fit <= i) fit = i + 1;                       // luôn tiến ít nhất 1 token
+        const piece = join(i, fit).replace(/^\s+/, '');
+        used += gapNow() + measure(piece);
+        cur.push({ type: 'text', text: piece });
+        i = fit;
+        if (i < toks.length) flush();                    // còn dư chữ → sang trang mới
+      }
     }
-    if (fit <= i) fit = i + 1; // luôn tiến ít nhất 1 token (phòng từ quá dài)
-    out.push(join(i, fit).replace(/^\s+/, ''));
-    i = fit;
   }
-  return out.length ? out : [''];
+  flush();
+  return out.length ? out : [[{ type: 'text', text: '' }]];
 }
 
 // Điện thoại: đọc sách chỉ 1 trang/màn hình (2 trang sẽ quá bé)
@@ -790,12 +1015,33 @@ function applyPageStyle(el, pageW, pageH, padX, padY, fontPx, lineH) {
   el.style.fontSize = fontPx + 'px';
   el.style.lineHeight = String(lineH);
 }
+// Đổ các mảnh (chữ/ảnh) của một trang sách vào phần tử trang
+function fillBookPage(el, fragments, pageW, pageH, padX, padY, fontPx, lineH) {
+  applyPageStyle(el, pageW, pageH, padX, padY, fontPx, lineH);
+  el.innerHTML = '';
+  const gap = Math.round(fontPx * 0.7);
+  fragments.forEach((f, idx) => {
+    let node;
+    if (f.type === 'image') {
+      node = document.createElement('img');
+      node.src = f.src;
+      node.style.width = f.w + 'px';
+      node.style.height = f.h + 'px';
+    } else {
+      node = document.createElement('div');
+      node.className = 'book-frag-text';
+      node.textContent = f.text;
+    }
+    if (idx > 0) node.style.marginTop = gap + 'px';
+    el.appendChild(node);
+  });
+}
 function renderBookTranslation() {
   bookLeftCanvas.hidden = true;
   bookRightCanvas.hidden = true;
 
-  const text = fullTranslatedText();
-  if (!text) {
+  const blocks = allBlocks();
+  if (!blocks.length) {
     transPages = [];
     bookTextLeft.hidden = true;
     bookTextRight.hidden = true;
@@ -819,22 +1065,20 @@ function renderBookTranslation() {
   const contentW = pageW - 2 * padX;
   const contentH = pageH - 2 * padY;
 
-  const sig = [text.length, Math.round(contentW), Math.round(contentH), Math.round(fontPx * 10)].join('|');
+  const sig = [blocksSignature(blocks), Math.round(contentW), Math.round(contentH), Math.round(fontPx * 10)].join('|');
   if (sig !== transSig) {
-    transPages = paginateTranslation(text, contentW, contentH, fontPx, lineH);
+    transPages = paginateBlocks(blocks, contentW, contentH, fontPx, lineH);
     transSig = sig;
   }
   const total = transPages.length;
   bookIndex = Math.min(Math.max(0, bookIndex), total - 1);
 
-  applyPageStyle(bookTextLeft, pageW, pageH, padX, padY, fontPx, lineH);
-  bookTextLeft.textContent = transPages[bookIndex] || '';
+  fillBookPage(bookTextLeft, transPages[bookIndex] || [], pageW, pageH, padX, padY, fontPx, lineH);
   bookTextLeft.hidden = false;
 
   const rightIdx = bookIndex + 1;
   if (!single && rightIdx < total) {
-    applyPageStyle(bookTextRight, pageW, pageH, padX, padY, fontPx, lineH);
-    bookTextRight.textContent = transPages[rightIdx];
+    fillBookPage(bookTextRight, transPages[rightIdx], pageW, pageH, padX, padY, fontPx, lineH);
     bookTextRight.hidden = false;
   } else {
     bookTextRight.hidden = true;
@@ -1161,7 +1405,7 @@ async function getSourceText(entry) {
 async function translateOne(entry, force = false) {
   const apiKey = apiKeyEl.value.trim();
   if (!apiKey) { setStatus('Chưa nhập API key.', 'error'); apiKeyEl.focus(); return false; }
-  if (!force && entry.editor.textContent.trim()) return true;
+  if (!force && entryPlainText(entry).trim()) return true;
 
   const sourceText = await getSourceText(entry);
   if (!sourceText) { setPageStat(entry.statEl, 'trống', ''); return true; }
@@ -1181,8 +1425,7 @@ async function translateOne(entry, force = false) {
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-    entry.editor.textContent = data.translation || '';
-    saveTranslation(docId, entry.index, entry.editor.textContent);
+    setEntryTranslation(entry, data.translation || '');
     setPageStat(entry.statEl, 'xong', 'done');
     return true;
   } catch (err) {
@@ -1260,7 +1503,7 @@ async function exportPdf() {
   if (!pages.length) return;
   const payload = {
     title: docTitle + ' — bản dịch',
-    pages: pages.map((p) => p.editor.textContent),
+    pages: pages.map((p) => entryPlainText(p)),
   };
   setStatus('Đang tạo PDF…', 'working');
   try {
