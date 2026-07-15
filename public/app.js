@@ -177,7 +177,7 @@ function normalizeBlocks(saved) {
     const out = [];
     for (const b of saved) {
       if (!b) continue;
-      if (b.type === 'image' && b.src) out.push({ type: 'image', src: b.src, w: b.w || 0, h: b.h || 0 });
+      if (b.type === 'image' && b.src) out.push({ type: 'image', src: b.src, w: b.w || 0, h: b.h || 0, widthPct: b.widthPct || 1 });
       else if (b.type === 'text') out.push({ type: 'text', text: String(b.text || '') });
     }
     return out.length ? out : [{ type: 'text', text: '' }];
@@ -228,15 +228,63 @@ function renderBlocks(entry) {
       });
       row.appendChild(ed);
     } else {
+      const holder = document.createElement('div');
+      holder.className = 'block-img-wrap';
+      holder.style.width = (clampPct(block.widthPct) * 100) + '%';
       const img = document.createElement('img');
       img.className = 'block-img';
       img.src = block.src;
       img.alt = 'Ảnh chèn';
-      row.appendChild(img);
+      img.draggable = false;
+      const handle = document.createElement('span');
+      handle.className = 'img-resize';
+      handle.title = 'Kéo để đổi kích cỡ ảnh';
+      holder.append(img, handle);
+      attachImageResize(handle, holder, entry, block);
+      row.appendChild(holder);
     }
     row.appendChild(buildBlockControls(entry, k));
     wrap.appendChild(row);
   });
+}
+
+function clampPct(p) { return Math.min(1, Math.max(0.1, Number(p) || 1)); }
+
+// Kéo góc phải-dưới của ảnh để đổi kích cỡ (lưu theo % bề rộng cột → nhất quán
+// giữa lúc soạn, lúc đọc sách và lúc xuất PDF).
+function attachImageResize(handle, holder, entry, block) {
+  let startX = 0, rowW = 1, startW = 0, dragging = false;
+  const onMove = (e) => {
+    if (!dragging) return;
+    const pct = clampPct((startW + (e.clientX - startX)) / rowW);
+    holder.style.width = (pct * 100) + '%';
+    block.widthPct = pct;
+    e.preventDefault();
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    savePageTranslation(entry);
+  };
+  handle.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    startX = e.clientX;
+    const row = holder.closest('.block');
+    rowW = (row ? row.clientWidth : holder.parentElement.clientWidth) || 1;
+    startW = holder.offsetWidth;
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    e.preventDefault();
+  });
+}
+function stepImgWidth(entry, k, d) {
+  const b = entry.blocks[k];
+  if (!b || b.type !== 'image') return;
+  b.widthPct = clampPct((b.widthPct || 1) + d);
+  renderBlocks(entry);
+  savePageTranslation(entry);
 }
 
 function buildBlockControls(entry, k) {
@@ -251,6 +299,11 @@ function buildBlockControls(entry, k) {
     b.addEventListener('click', fn);
     return b;
   };
+  const isImg = entry.blocks[k] && entry.blocks[k].type === 'image';
+  if (isImg) bar.append(
+    mk('Ảnh nhỏ', 'Thu nhỏ ảnh', () => stepImgWidth(entry, k, -0.1)),
+    mk('Ảnh to', 'Phóng to ảnh', () => stepImgWidth(entry, k, 0.1)),
+  );
   bar.append(
     mk('＋ Ảnh', 'Chèn ảnh ngay dưới khối này', () => insertImageAfter(entry, k)),
     mk('＋ Chữ', 'Thêm ô chữ ngay dưới khối này', () => insertTextAfter(entry, k)),
@@ -873,7 +926,7 @@ function allBlocks() {
         const t = (b.text || '').trim();
         if (t) out.push({ type: 'text', text: t });
       } else if (b.type === 'image' && b.src) {
-        out.push({ type: 'image', src: b.src, w: b.w || 0, h: b.h || 0 });
+        out.push({ type: 'image', src: b.src, w: b.w || 0, h: b.h || 0, widthPct: b.widthPct || 1 });
       }
     }
   }
@@ -904,8 +957,8 @@ function paginateBlocks(blocks, contentW, contentH, fontPx, lineH) {
 
   for (const block of blocks) {
     if (block.type === 'image') {
-      let dw = Math.min(contentW, block.w || contentW);
-      let dh = block.w ? (block.h * dw / block.w) : Math.min(contentH, contentW);
+      let dw = contentW * clampPct(block.widthPct);
+      let dh = block.w ? (block.h * dw / block.w) : Math.min(contentH, dw);
       if (dh > contentH) { dw = dw * (contentH / dh); dh = contentH; } // cao quá 1 trang → co lại
       if (cur.length && used + gapNow() + dh > contentH) flush();
       used += gapNow() + dh;
@@ -1503,7 +1556,13 @@ async function exportPdf() {
   if (!pages.length) return;
   const payload = {
     title: docTitle + ' — bản dịch',
-    pages: pages.map((p) => entryPlainText(p)),
+    pages: pages.map((p) => ({
+      blocks: p.blocks
+        .map((b) => b.type === 'image'
+          ? { type: 'image', src: b.src, w: b.w || 0, h: b.h || 0, widthPct: clampPct(b.widthPct) }
+          : { type: 'text', text: (b.text || '').trim() })
+        .filter((b) => (b.type === 'image' ? !!b.src : !!b.text)),
+    })),
   };
   setStatus('Đang tạo PDF…', 'working');
   try {

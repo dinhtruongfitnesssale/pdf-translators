@@ -370,11 +370,24 @@ body {
 .blocks .editor { min-height: 48px; }
 .block { position: relative; }
 .block-image { text-align: center; }
+.block-img-wrap {
+  position: relative; display: inline-block; max-width: 100%;
+  margin: 6px 0 2px; line-height: 0; vertical-align: top;
+}
 .block-img {
-  max-width: 100%; height: auto; display: block; margin: 6px auto 2px;
+  width: 100%; height: auto; display: block;
   border: 1px solid var(--line); border-radius: 6px;
   box-shadow: 0 1px 6px rgba(20,17,14,0.08);
 }
+/* Núm kéo góc phải-dưới để đổi kích cỡ ảnh */
+.img-resize {
+  position: absolute; right: -7px; bottom: -7px;
+  width: 16px; height: 16px; border-radius: 4px;
+  background: var(--amber); border: 2px solid var(--paper);
+  box-shadow: 0 1px 4px rgba(20,17,14,0.3);
+  cursor: nwse-resize; touch-action: none;
+}
+.img-resize:hover { background: #c9762a; }
 /* Thanh điều khiển nhỏ dưới mỗi khối — hiện khi rê chuột / đang thao tác trong khối */
 .block-ctrls {
   display: flex; flex-wrap: wrap; gap: 6px;

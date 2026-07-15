@@ -10,7 +10,7 @@ const { SKILLS, buildSystemPrompt } = require('./prompts');
 const app = express();
 const PORT = process.env.PORT || 5173;
 
-app.use(express.json({ limit: '30mb' }));
+app.use(express.json({ limit: '60mb' })); // rộng rãi cho bản dịch có ảnh chèn (base64)
 
 // Giao diện tĩnh (gồm cả pdf.js đã chép sẵn vào public/vendor/pdfjs)
 app.use(express.static(path.join(__dirname, 'public')));
@@ -147,8 +147,23 @@ app.post('/api/export', (req, res) => {
       .moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + 48, doc.y).stroke().restore();
     doc.moveDown(1);
 
+    // Chuẩn hoá nội dung một trang thành danh sách khối (chữ/ảnh), theo thứ tự.
+    // Nhận cả định dạng cũ (chuỗi) lẫn mới ({ blocks: [...] }).
+    const pageBlocks = (raw) => {
+      if (raw == null) return [];
+      if (typeof raw === 'string') return raw.trim() ? [{ type: 'text', text: raw }] : [];
+      if (Array.isArray(raw.blocks)) return raw.blocks;
+      return [];
+    };
+    const dataUrlToBuffer = (src) => {
+      const m = /^data:[^;]+;base64,(.*)$/.exec(src || '');
+      if (!m) return null;
+      try { return Buffer.from(m[1], 'base64'); } catch { return null; }
+    };
+    const clampPct = (p) => Math.min(1, Math.max(0.1, Number(p) || 1));
+
     items.forEach((raw, i) => {
-      const textContent = (raw == null ? '' : String(raw)).trim();
+      const blocks = pageBlocks(raw);
       if (i > 0) {
         doc.moveDown(0.8);
         doc.save().strokeColor(BRAND.amber).lineWidth(0.75)
@@ -160,8 +175,35 @@ app.post('/api/export', (req, res) => {
       doc.font('VN').fontSize(8).fillColor(BRAND.slate)
         .text(`TRANG ${i + 1}`, { width: contentWidth, characterSpacing: 1 });
       doc.moveDown(0.4);
-      doc.font('VN').fontSize(11.5).fillColor(BRAND.ink)
-        .text(textContent || '(trống)', { width: contentWidth, align: 'left', lineGap: 3 });
+
+      if (!blocks.length) {
+        doc.font('VN').fontSize(11.5).fillColor(BRAND.ink)
+          .text('(trống)', { width: contentWidth, align: 'left', lineGap: 3 });
+        return;
+      }
+
+      blocks.forEach((b, bi) => {
+        if (bi > 0) doc.moveDown(0.35);
+        if (b && b.type === 'image') {
+          const buf = dataUrlToBuffer(b.src);
+          if (!buf) return;
+          let w = contentWidth * clampPct(b.widthPct);
+          let h = (b.w && b.h) ? (w * b.h / b.w) : w;
+          const top = doc.page.margins.top;
+          const bottom = doc.page.height - doc.page.margins.bottom;
+          const maxH = bottom - top;
+          if (h > maxH) { w = w * (maxH / h); h = maxH; }   // ảnh cao hơn 1 trang → co vừa
+          if (doc.y + h > bottom) doc.addPage();            // không đủ chỗ → sang trang mới
+          const x = doc.page.margins.left + (contentWidth - w) / 2; // canh giữa
+          try { doc.image(buf, x, doc.y, { width: w, height: h }); doc.y += h; } catch {}
+          doc.x = doc.page.margins.left;
+        } else {
+          const t = (b && b.text != null ? String(b.text) : '').trim();
+          if (!t) return;
+          doc.font('VN').fontSize(11.5).fillColor(BRAND.ink)
+            .text(t, { width: contentWidth, align: 'left', lineGap: 3 });
+        }
+      });
     });
 
     // Số trang PDF ở chân trang
