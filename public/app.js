@@ -565,7 +565,9 @@ let suppressScrollSave = false;
 
 function stickyOffset() {
   const t = document.querySelector('.topbar');
-  return (t ? t.offsetHeight : 120) + 10;
+  let h = (t ? t.offsetHeight : 120) + 10;
+  if (libraryEl && !libraryEl.hidden) h += libraryEl.offsetHeight; // thanh Thư viện dính
+  return h;
 }
 function visibleColEl(entry) {
   return viewMode === 'trans' ? entry.transEl : entry.origEl;
@@ -2276,6 +2278,15 @@ async function exportOverlayPdf() {
 }
 
 // ---------- Init ----------
+// Ghim chiều cao topbar vào biến CSS để thanh Thư viện dính đúng ngay dưới topbar
+// (topbar co giãn khi đổi khổ màn hình / mở menu ☰ trên điện thoại).
+function syncTopbarHeight() {
+  document.documentElement.style.setProperty('--topbar-h', (topbarEl ? topbarEl.offsetHeight : 0) + 'px');
+}
+if (window.ResizeObserver && topbarEl) new ResizeObserver(syncTopbarHeight).observe(topbarEl);
+window.addEventListener('resize', syncTopbarHeight);
+syncTopbarHeight();
+
 loadSettings();
 updateKeyHint();
 loadConfig();

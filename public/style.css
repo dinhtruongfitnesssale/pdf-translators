@@ -244,16 +244,21 @@ body {
 
 /* ---------- Thư viện (tối đa 3 tài liệu lưu trong máy) ---------- */
 .library {
+  position: sticky;
+  top: var(--topbar-h, 0px);
+  z-index: 15;
   background: var(--paper);
   border-bottom: 1px solid var(--line);
-  padding: 12px 22px 14px;
+  padding: 10px 22px 11px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 .lib-head { display: flex; align-items: baseline; gap: 10px; }
 .lib-count { font-family: var(--mono); font-size: 12px; color: var(--slate); }
-.lib-shelf { display: flex; flex-wrap: wrap; gap: 10px; }
+/* Một hàng ngang gọn (tối đa 3 sách), cuộn ngang nếu tên dài → chiều cao ổn định */
+.lib-shelf { display: flex; flex-wrap: nowrap; gap: 10px; overflow-x: auto; padding-bottom: 2px; }
+.lib-shelf .doc-chip { flex: 0 0 auto; }
 .doc-chip {
   display: inline-flex;
   align-items: stretch;
