@@ -215,9 +215,26 @@ Về ĐỊNH DẠNG ĐẦU RA, hãy bỏ qua mọi hướng dẫn "quy trình/xu
   - (nội dung dòng 2 của cột B)
 - Vẫn áp dụng ĐẦY ĐỦ mọi QUY TẮC DỊCH và QUY TẮC THUẬT NGỮ ở trên (riêng phần "giữ nguyên bảng biểu" thì trình bày theo dạng liệt kê từng cột như trên, KHÔNG kẻ bảng bằng ký tự).`;
 
+// Hướng dẫn riêng cho chế độ "Đè trang": dịch NHIỀU đoạn rời trong một lần gọi,
+// mỗi đoạn giữ nguyên marker [[n]] để ghép lại đúng vị trí trên trang.
+const BLOCKS_INSTRUCTIONS = `--- HƯỚNG DẪN VẬN HÀNH (DỊCH THEO KHỐI ĐỂ ĐÈ LÊN TRANG) ---
+Bạn nhận NHIỀU đoạn văn bản rời được trích từ một trang PDF tiếng Anh. Mỗi đoạn bắt đầu bằng một marker dạng [[n]] (n là số thứ tự). Nhiệm vụ: dịch TỪNG đoạn sang tiếng Việt.
+Bỏ qua mọi hướng dẫn "quy trình/xuất bản/output trong chat/không tạo file" ở trên; về ĐỊNH DẠNG ĐẦU RA hãy tuân theo đúng các quy tắc sau:
+- Trả về ĐÚNG số đoạn như đầu vào. Mỗi đoạn dịch phải bắt đầu bằng đúng marker [[n]] tương ứng rồi tới bản dịch, các đoạn cách nhau bằng một dòng trống.
+- TUYỆT ĐỐI KHÔNG gộp, KHÔNG tách, KHÔNG đổi thứ tự, KHÔNG thêm hay bớt đoạn. Số marker ra phải bằng số marker vào.
+- Nếu một đoạn chỉ là số/ký hiệu hoặc đã là tiếng Việt, giữ nguyên nội dung nhưng vẫn kèm marker [[n]].
+- Chỉ trả về marker + bản dịch, KHÔNG thêm lời dẫn/tiêu đề/bình luận/giải thích. KHÔNG dùng bảng Markdown và KHÔNG dùng ký tự gạch dọc "|".
+- Mỗi đoạn là một khối chữ độc lập trên trang — dịch gọn, đúng nghĩa, không tự ý thêm câu dẫn nối giữa các đoạn.
+- Vẫn áp dụng ĐẦY ĐỦ mọi QUY TẮC DỊCH và QUY TẮC THUẬT NGỮ ở trên.`;
+
 function buildSystemPrompt(skillKey) {
   const skill = SKILLS[skillKey] || SKILLS.fitness;
   return `${skill.body}\n\n${APP_INSTRUCTIONS}`;
 }
 
-module.exports = { SKILLS, buildSystemPrompt };
+function buildBlocksSystemPrompt(skillKey) {
+  const skill = SKILLS[skillKey] || SKILLS.fitness;
+  return `${skill.body}\n\n${BLOCKS_INSTRUCTIONS}`;
+}
+
+module.exports = { SKILLS, buildSystemPrompt, buildBlocksSystemPrompt };

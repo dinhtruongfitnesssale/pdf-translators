@@ -5,7 +5,7 @@ const path = require('path');
 const express = require('express');
 const PDFDocument = require('pdfkit');
 const Anthropic = require('@anthropic-ai/sdk');
-const { SKILLS, buildSystemPrompt } = require('./prompts');
+const { SKILLS, buildSystemPrompt, buildBlocksSystemPrompt } = require('./prompts');
 
 const app = express();
 const PORT = process.env.PORT || 5173;
@@ -30,28 +30,75 @@ app.get('/api/config', (req, res) => {
   });
 });
 
-// --- DỊCH ---
+// Gọi bộ máy dịch phù hợp với provider (dùng chung cho mọi endpoint dịch).
+async function runTranslate({ provider, apiKey, model, system, text }) {
+  if (!text || !text.trim()) return '';
+  if (provider === 'claude') return (await translateClaude({ apiKey, model, system, text })) || '';
+  if (provider === 'gemini') return (await translateGemini({ apiKey, model, system, text })) || '';
+  const e = new Error('provider không hợp lệ (chọn "gemini" hoặc "claude").');
+  e.status = 400;
+  throw e;
+}
+
+// --- DỊCH (một khối chữ) ---
 app.post('/api/translate', async (req, res) => {
   try {
     const { provider, apiKey, model, skill, text } = req.body || {};
     if (!apiKey) return res.status(400).json({ error: 'Thiếu API key.' });
     if (!text || !text.trim()) return res.json({ translation: '' });
-
-    const system = buildSystemPrompt(skill);
-    let translation;
-
-    if (provider === 'claude') {
-      translation = await translateClaude({ apiKey, model, system, text });
-    } else if (provider === 'gemini') {
-      translation = await translateGemini({ apiKey, model, system, text });
-    } else {
-      return res.status(400).json({ error: 'provider không hợp lệ (chọn "gemini" hoặc "claude").' });
-    }
-
+    const translation = await runTranslate({ provider, apiKey, model, system: buildSystemPrompt(skill), text });
     res.json({ translation: (translation || '').trim() });
   } catch (err) {
     console.error('translate error:', err?.message || err);
-    res.status(502).json({ error: normalizeError(err) });
+    res.status(err?.status === 400 ? 400 : 502).json({ error: normalizeError(err) });
+  }
+});
+
+// Tách bản dịch nhiều khối theo marker [[n]] → mảng đúng thứ tự (thiếu = null).
+function parseNumbered(raw, n) {
+  const out = new Array(n).fill(null);
+  const re = /\[\[\s*(\d+)\s*\]\]/g;
+  const marks = [];
+  let m;
+  while ((m = re.exec(raw))) marks.push({ n: parseInt(m[1], 10), start: m.index, end: re.lastIndex });
+  for (let i = 0; i < marks.length; i++) {
+    const cur = marks[i];
+    const textEnd = i + 1 < marks.length ? marks[i + 1].start : raw.length;
+    const t = raw.slice(cur.end, textEnd).trim();
+    if (cur.n >= 1 && cur.n <= n) out[cur.n - 1] = t;
+  }
+  return out;
+}
+
+// --- DỊCH THEO KHỐI (cho chế độ "Đè trang") ---
+// Nhận mảng đoạn chữ, trả về mảng bản dịch cùng số lượng/thứ tự. Gọi 1 lần cho cả
+// trang; khối nào model trả thiếu/không khớp marker thì dịch lại riêng khối đó.
+app.post('/api/translate-blocks', async (req, res) => {
+  try {
+    const { provider, apiKey, model, skill, blocks } = req.body || {};
+    if (!apiKey) return res.status(400).json({ error: 'Thiếu API key.' });
+    const list = Array.isArray(blocks) ? blocks : [];
+    if (!list.length) return res.json({ translations: [] });
+
+    const systemBlocks = buildBlocksSystemPrompt(skill);
+    const systemPlain = buildSystemPrompt(skill);
+    const input = list.map((b, i) => `[[${i + 1}]]\n${b == null ? '' : String(b)}`).join('\n\n');
+
+    const raw = await runTranslate({ provider, apiKey, model, system: systemBlocks, text: input });
+    const out = parseNumbered(raw, list.length);
+
+    // Dự phòng: khối nào thiếu → dịch lẻ (đảm bảo luôn đủ số khối để đè đúng chỗ).
+    for (let i = 0; i < out.length; i++) {
+      if (out[i] != null && out[i] !== '') continue;
+      const src = (list[i] == null ? '' : String(list[i])).trim();
+      if (!src) { out[i] = ''; continue; }
+      try { out[i] = (await runTranslate({ provider, apiKey, model, system: systemPlain, text: src })).trim(); }
+      catch { out[i] = src; }
+    }
+    res.json({ translations: out });
+  } catch (err) {
+    console.error('translate-blocks error:', err?.message || err);
+    res.status(err?.status === 400 ? 400 : 502).json({ error: normalizeError(err) });
   }
 });
 
@@ -219,6 +266,44 @@ app.post('/api/export', (req, res) => {
     doc.end();
   } catch (err) {
     console.error('export error:', err?.message || err);
+    if (!res.headersSent) res.status(500).json({ error: 'Lỗi khi tạo PDF: ' + (err?.message || err) });
+  }
+});
+
+// --- XUẤT PDF "ĐÈ TRANG" ---
+// Mỗi trang đã được ghép sẵn ở trình duyệt thành 1 ảnh (bản gốc + chữ Việt đè lên).
+// Server chỉ việc đặt mỗi ảnh làm một trang PDF đúng khổ (điểm = points).
+app.post('/api/export-overlay', (req, res) => {
+  try {
+    const { title, pages } = req.body || {};
+    const items = Array.isArray(pages) ? pages : [];
+    if (!items.length) return res.status(400).json({ error: 'Không có nội dung để xuất.' });
+
+    const dataUrlToBuffer = (src) => {
+      const m = /^data:[^;]+;base64,(.*)$/.exec(src || '');
+      if (!m) return null;
+      try { return Buffer.from(m[1], 'base64'); } catch { return null; }
+    };
+    const sizeOf = (p) => [Math.max(1, Math.round(p.w || 595)), Math.max(1, Math.round(p.h || 842))];
+
+    const first = sizeOf(items[0]);
+    const doc = new PDFDocument({ size: first, margin: 0, bufferPages: true });
+
+    const safeTitle = (title || 'ban-dich').replace(/[^\p{L}\p{N}\-_ ]/gu, '').trim() || 'ban-dich';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeTitle)}.pdf"`);
+    doc.pipe(res);
+
+    items.forEach((p, i) => {
+      const [w, h] = sizeOf(p);
+      if (i > 0) doc.addPage({ size: [w, h], margin: 0 });
+      const buf = dataUrlToBuffer(p.img);
+      if (buf) { try { doc.image(buf, 0, 0, { width: w, height: h }); } catch {} }
+    });
+
+    doc.end();
+  } catch (err) {
+    console.error('export-overlay error:', err?.message || err);
     if (!res.headersSent) res.status(500).json({ error: 'Lỗi khi tạo PDF: ' + (err?.message || err) });
   }
 });

@@ -519,3 +519,45 @@ body {
 .modal input:disabled, .modal .field:has(input:disabled) span { opacity: 0.45; }
 .modal-confirm .modal-sub { white-space: pre-line; margin-bottom: 4px; }
 .modal-confirm .modal-actions { margin-top: 20px; }
+
+/* ---------- Chế độ "Đè trang" (overlay: dịch thẳng lên trang) ---------- */
+.overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+  padding: 20px 14px 60px;
+}
+.ov-page {
+  width: 100%;
+  max-width: 960px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.ov-tag {
+  align-self: flex-start;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--amber);
+  margin-bottom: 6px;
+}
+.ov-canvas {
+  max-width: 100%;
+  height: auto;
+  background: var(--paper);
+  border: 1px solid rgba(20, 17, 14, 0.12);
+  box-shadow: 0 6px 22px rgba(20, 17, 14, 0.10);
+  border-radius: 2px;
+}
+.ov-stat {
+  align-self: flex-start;
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(20, 17, 14, 0.55);
+  min-height: 16px;
+}
+.ov-stat.working { color: var(--amber); }
+.ov-stat.done { color: #2e7d32; }
+.ov-stat.error { color: var(--clay); }
