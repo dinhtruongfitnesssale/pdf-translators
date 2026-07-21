@@ -187,8 +187,11 @@ body {
 /* ---------- Điện thoại: gộp cài đặt + công cụ vào nút ☰ để chừa chỗ đọc ---------- */
 @media (max-width: 720px) {
   /* Chặn tràn ngang: nếu body rộng hơn màn hình, thanh sticky bị kéo giãn
-     và nút ☰ (space-between) bị đẩy ra ngoài mép phải. */
-  html, body { overflow-x: hidden; }
+     và nút ☰ (space-between) bị đẩy ra ngoài mép phải.
+     Dùng `clip` (KHÔNG phải `hidden`): `hidden` biến body thành vùng cuộn
+     riêng làm hỏng position:sticky của topbar (topbar trôi mất khi lướt trên
+     điện thoại); `clip` chặn tràn ngang mà vẫn giữ sticky hoạt động. */
+  html, body { overflow-x: clip; }
   .mono { overflow-wrap: anywhere; }
   .hints li { overflow-wrap: anywhere; }
 
@@ -255,6 +258,8 @@ body {
   gap: 7px;
 }
 .lib-head { display: flex; align-items: baseline; gap: 10px; }
+/* Đang đọc thì ẩn dòng "THƯ VIỆN x/3 tài liệu" cho gọn vùng đọc */
+body.doc-open .lib-head { display: none; }
 .lib-count { font-family: var(--mono); font-size: 12px; color: var(--slate); }
 /* Một hàng ngang gọn (tối đa 3 sách), cuộn ngang nếu tên dài → chiều cao ổn định */
 .lib-shelf { display: flex; flex-wrap: nowrap; gap: 10px; overflow-x: auto; padding-bottom: 2px; }

@@ -673,6 +673,7 @@ window.addEventListener('scroll', () => {
   if (scrollTimer) return;
   scrollTimer = setTimeout(() => {
     scrollTimer = null;
+    if (suppressScrollSave || !docId) return; // đang khôi phục/đổi tài liệu → bỏ qua
     localStorage.setItem(pageKey(docId), String(currentTopPage()));
   }, 200);
 }, { passive: true });
@@ -701,7 +702,14 @@ window.addEventListener('resize', () => {
 // Lưu ngay vị trí trang khi rời/ẩn trang (đề phòng refresh trong lúc throttle)
 function flushPage() {
   if (readMode === 'book') return; // chế độ sách đã tự lưu bookIndex khi lật
-  if (docId && pages.length) localStorage.setItem(pageKey(docId), String(currentTopPage()));
+  if (!docId || suppressScrollSave) return;
+  if (viewMode === 'overlay') {
+    if (overlayPages.length) localStorage.setItem(pageKey(docId), String(overlayCurrentTop()));
+    return;
+  }
+  // Ở chế độ Đè trang các trang song ngữ bị ẩn → currentTopPage() sai (trả trang cuối);
+  // chỉ lưu theo currentTopPage() cho các chế độ cuộn song ngữ/bản dịch/bản gốc.
+  if (pages.length) localStorage.setItem(pageKey(docId), String(currentTopPage()));
 }
 window.addEventListener('pagehide', flushPage);
 document.addEventListener('visibilitychange', () => {
@@ -759,8 +767,16 @@ async function openFromBytes(ab, name, size, restoring) {
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(ab) }).promise;
   pdfDoc = pdf;
 
+  // Đừng lưu vị trí trong lúc dựng/khôi phục tài liệu: khi đổi tài liệu (đang cuộn
+  // sâu), một lần lưu bị hẹn giờ có thể ghi đè trang đang đọc của tài liệu MỚI bằng
+  // vị trí cuộn tạm thời (thường là trang cuối) → mở lại bị nhảy xuống cuối.
+  suppressScrollSave = true;
+  if (scrollTimer) { clearTimeout(scrollTimer); scrollTimer = null; }
+  if (ovScrollTimer) { clearTimeout(ovScrollTimer); ovScrollTimer = null; }
+
   docTitle = name.replace(/\.pdf$/i, '');
   docId = `${name}::${size}`;
+  document.body.classList.add('doc-open');
   const saved = loadTranslations(docId);
 
   // reset UI
@@ -855,8 +871,10 @@ async function openFromBytes(ab, name, size, restoring) {
     bookEl.hidden = true;
     overlayEl.hidden = false;
     renderOverlay(savedPage);
-  } else if (readMode === 'book') setReadMode('book');
-  else restoreReadingPosition(savedPage);
+  } else if (readMode === 'book') {
+    setReadMode('book');
+    suppressScrollSave = false; // chế độ sách tự quản vị trí, gỡ cờ chặn
+  } else restoreReadingPosition(savedPage);
 }
 
 // ---------- Vẽ canvas theo nhu cầu (lazy): chỉ vẽ trang gần khung nhìn ----------
@@ -1367,6 +1385,7 @@ async function closeDoc() {
   pages.length = 0;
   pdfDoc = null;
   docId = null;
+  document.body.classList.remove('doc-open');
   docTitle = 'ban-dich';
   [...pagesEl.querySelectorAll('.orig, .trans')].forEach((n) => n.remove());
   if (overlayObserver) { overlayObserver.disconnect(); overlayObserver = null; }
@@ -2139,7 +2158,8 @@ function overlayScroll() {
   if (ovScrollTimer) return;
   ovScrollTimer = setTimeout(() => {
     ovScrollTimer = null;
-    if (docId) localStorage.setItem(pageKey(docId), String(overlayCurrentTop()));
+    if (suppressScrollSave || !docId) return; // đang khôi phục/đổi tài liệu → bỏ qua
+    localStorage.setItem(pageKey(docId), String(overlayCurrentTop()));
   }, 200);
 }
 
