@@ -776,7 +776,7 @@ async function openFromBytes(ab, name, size, restoring) {
 
   docTitle = name.replace(/\.pdf$/i, '');
   docId = `${name}::${size}`;
-  document.body.classList.add('doc-open');
+  document.body.classList.add('reading');
   const saved = loadTranslations(docId);
 
   // reset UI
@@ -1385,7 +1385,7 @@ async function closeDoc() {
   pages.length = 0;
   pdfDoc = null;
   docId = null;
-  document.body.classList.remove('doc-open');
+  document.body.classList.remove('reading');
   docTitle = 'ban-dich';
   [...pagesEl.querySelectorAll('.orig, .trans')].forEach((n) => n.remove());
   if (overlayObserver) { overlayObserver.disconnect(); overlayObserver = null; }

@@ -259,7 +259,7 @@ body {
 }
 .lib-head { display: flex; align-items: baseline; gap: 10px; }
 /* Đang đọc thì ẩn dòng "THƯ VIỆN x/3 tài liệu" cho gọn vùng đọc */
-body.doc-open .lib-head { display: none; }
+body.reading .lib-head { display: none; }
 .lib-count { font-family: var(--mono); font-size: 12px; color: var(--slate); }
 /* Một hàng ngang gọn (tối đa 3 sách), cuộn ngang nếu tên dài → chiều cao ổn định */
 .lib-shelf { display: flex; flex-wrap: nowrap; gap: 10px; overflow-x: auto; padding-bottom: 2px; }
