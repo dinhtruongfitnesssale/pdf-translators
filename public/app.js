@@ -2047,22 +2047,30 @@ function buildOverlaySurface() {
   for (let i = 1; i <= pdfDoc.numPages; i++) {
     const wrap = document.createElement('div');
     wrap.className = 'ov-page';
+    const head = document.createElement('div');
+    head.className = 'ov-head';
     const tag = document.createElement('div');
     tag.className = 'ov-tag';
     tag.textContent = `Trang ${i} / ${pdfDoc.numPages}`;
+    const btn = document.createElement('button');
+    btn.className = 'ov-btn';
+    btn.type = 'button';
+    head.append(tag, btn);
     const canvas = document.createElement('canvas');
     canvas.className = 'ov-canvas';
     const stat = document.createElement('div');
     stat.className = 'ov-stat';
-    wrap.append(tag, canvas, stat);
+    wrap.append(head, canvas, stat);
     const rec = all[i - 1];
     const entry = {
-      pageNum: i, el: wrap, canvas, statEl: stat, ext: null,
+      pageNum: i, el: wrap, canvas, statEl: stat, btnEl: btn, ext: null,
       translated: rec && Array.isArray(rec.vi) ? rec.vi : null,
       trHash: rec ? rec.h : '', composed: false, composing: false, sig: '',
     };
+    btn.textContent = entry.translated ? 'Dịch lại' : 'Dịch';
     if (entry.translated) setOvStat(entry, 'đã dịch', 'done');
     else setOvStat(entry, 'chưa dịch', '');
+    btn.addEventListener('click', () => translateOverlayOne(entry));
     wrap._ov = entry;
     overlayPages.push(entry);
     frag.appendChild(wrap);
@@ -2174,6 +2182,28 @@ async function translateOverlayPage(entry) {
   return true;
 }
 
+// Dịch NGAY một trang (nút "Dịch" trên chính trang đó).
+async function translateOverlayOne(entry) {
+  const apiKey = apiKeyEl.value.trim();
+  if (!apiKey) { setStatus('Chưa nhập API key.', 'error'); apiKeyEl.focus(); return; }
+  saveSettings();
+  if (entry.btnEl) { entry.btnEl.disabled = true; entry.btnEl.textContent = 'Đang dịch…'; }
+  setOvStat(entry, 'đang dịch…', 'working');
+  setStatus(`Đang dịch trang ${entry.pageNum}…`, 'working');
+  try {
+    await translateOverlayPage(entry);
+    setOvStat(entry, 'đã dịch', 'done');
+    setStatus(`Đã dịch xong trang ${entry.pageNum}.`, 'done');
+    entry.composed = false;
+    ensureComposed(entry, true);
+  } catch (err) {
+    setOvStat(entry, 'lỗi', 'error');
+    setStatus('Lỗi trang ' + entry.pageNum + ': ' + err.message, 'error');
+  } finally {
+    if (entry.btnEl) { entry.btnEl.disabled = false; entry.btnEl.textContent = entry.translated ? 'Dịch lại' : 'Dịch'; }
+  }
+}
+
 async function runOverlayTranslate(list) {
   const apiKey = apiKeyEl.value.trim();
   if (!apiKey) { setStatus('Chưa nhập API key.', 'error'); apiKeyEl.focus(); return; }
@@ -2190,6 +2220,7 @@ async function runOverlayTranslate(list) {
       await translateOverlayPage(entry);
       ok++;
       setOvStat(entry, 'đã dịch', 'done');
+      if (entry.btnEl) entry.btnEl.textContent = 'Dịch lại';
       entry.composed = false;
       ensureComposed(entry, true);
     } catch (err) {

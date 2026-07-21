@@ -535,14 +535,34 @@ body {
   flex-direction: column;
   align-items: center;
 }
+.ov-head {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
 .ov-tag {
-  align-self: flex-start;
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.06em;
   color: var(--amber);
-  margin-bottom: 6px;
 }
+.ov-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 5px 14px;
+  color: var(--paper);
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 7px;
+  line-height: 1.2;
+}
+.ov-btn:hover:not(:disabled) { background: var(--amber); border-color: var(--amber); }
+.ov-btn:disabled { opacity: 0.5; cursor: default; }
 .ov-canvas {
   max-width: 100%;
   height: auto;
