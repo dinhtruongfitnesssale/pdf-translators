@@ -89,6 +89,12 @@
 
       <button id="expandBtn" class="btn" type="button" title="Đọc toàn màn hình" disabled>⤢ Phóng</button>
 
+      <div class="backup" role="group" aria-label="Sao lưu dữ liệu">
+        <button id="backupBtn" class="btn" type="button" title="Xuất bản dịch + API key ra một file để phòng khi mất dữ liệu">⇩ Sao lưu</button>
+        <button id="restoreBtn" class="btn" type="button" title="Nhập lại dữ liệu từ file sao lưu">⇧ Khôi phục</button>
+        <input id="restoreInput" type="file" accept="application/json,.json" hidden />
+      </div>
+
       <span id="status" class="status"></span>
     </div>
   </header>
@@ -168,6 +174,31 @@
       <div class="modal-actions">
         <button id="modalCancel" class="btn" type="button">Hủy</button>
         <button id="modalGo" class="btn btn-primary" type="button">Dịch</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal sao lưu: chọn nội dung muốn xuất ra file -->
+  <div id="backupModal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="backupTitle">
+      <span class="eyebrow">SAO LƯU DỮ LIỆU</span>
+      <h2 id="backupTitle">Xuất dữ liệu ra một file</h2>
+      <p class="modal-sub" id="backupSummary">—</p>
+
+      <div class="bk-opts">
+        <label class="check">
+          <input id="bkKey" type="checkbox" /> <span>Kèm API key <b>(đừng gửi file này cho người khác)</b></span>
+        </label>
+        <label class="check">
+          <input id="bkPdf" type="checkbox" /> <span>Kèm cả file PDF gốc (file sao lưu nặng hơn nhiều)</span>
+        </label>
+      </div>
+
+      <p id="backupHint" class="modal-hint"></p>
+
+      <div class="modal-actions">
+        <button id="backupCancel" class="btn" type="button">Hủy</button>
+        <button id="backupGo" class="btn btn-primary" type="button">Tải file sao lưu</button>
       </div>
     </div>
   </div>
