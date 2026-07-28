@@ -1186,6 +1186,7 @@ async function openFromBytes(ab, name, size, restoring) {
   NOTE = loadNotes(docId); // bookmark + highlight + ghi chú của tài liệu này
 
   // reset UI
+  renderErrorShown = false; // tài liệu mới → cho phép báo lỗi vẽ lại từ đầu
   pages.length = 0;
   [...pagesEl.querySelectorAll('.orig, .trans')].forEach((n) => n.remove());
   if (overlayObserver) { overlayObserver.disconnect(); overlayObserver = null; }
@@ -1337,7 +1338,10 @@ async function ensureRendered(e) {
     e.rendered = true;
     e.renderSig = sig;
     paintRectLayer(e.hlLayer, e.index, e.aspect, 'orig'); // vệt bôi theo đúng tỉ lệ trang
-  } catch {}
+  } catch (err) {
+    // Đừng nuốt lỗi: canvas hỏng chỉ hiện ra thành trang trắng, không có manh mối gì.
+    reportRenderError(e.pageNum, err);
+  }
   finally { e.renderingSig = null; }
 }
 // Vẽ những trang đang (gần) trong khung nhìn
@@ -1856,6 +1860,18 @@ async function restoreLastDoc() {
   } catch (e) {
     setStatus('Không mở lại được tài liệu trước: ' + e.message, 'error');
   }
+}
+
+// Trang vẽ hỏng thì canvas chỉ trơ ra một ô trắng — im lặng là không thể lần ra
+// nguyên nhân. Ghi console đầy đủ, và báo lên thanh trạng thái một lần duy nhất
+// để không spam khi cả tập tài liệu cùng hỏng vì một lý do.
+let renderErrorShown = false;
+function reportRenderError(pageNum, err) {
+  if (err?.name === 'RenderingCancelledException') return; // huỷ có chủ đích
+  console.error(`[pdf-translator] Vẽ trang ${pageNum} hỏng:`, err);
+  if (renderErrorShown) return;
+  renderErrorShown = true;
+  setStatus(`Không vẽ được trang ${pageNum}: ${err?.message || err}`, 'error');
 }
 
 async function renderPage(page, canvas, container) {
@@ -2590,7 +2606,7 @@ async function ensureComposed(entry, force) {
     // Trang đè có thể cao thêm khi bản dịch dài → vẽ lại vệt bôi theo tỉ lệ mới
     paintRectLayer(entry.hlLayer, entry.pageNum - 1, dims.hPt / dims.wPt, 'ov');
   } catch (e) {
-    /* trang lỗi → bỏ qua, giữ canvas cũ */
+    reportRenderError(entry.pageNum, e); // giữ canvas cũ, nhưng phải nói ra là hỏng
   } finally {
     entry.composing = false;
   }

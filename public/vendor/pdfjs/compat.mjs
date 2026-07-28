@@ -1,7 +1,10 @@
-// Polyfill Uint8Array base64/hex cho trinh duyet cu.
-// pdf.js 6.x goi toHex()/toBase64()/Uint8Array.fromBase64(), chi co tu
-// Chrome 140, Safari 18.2, Firefox 133. Tren ban cu hon se bao loi
-// "hashOriginal.toHex is not a function" ngay khi mo tai lieu.
+// Polyfill cac API JS rat moi ma pdf.js 6.x dung, cho trinh duyet cu hon.
+// Khong co chung thi:
+//   - Uint8Array.toHex  -> "hashOriginal.toHex is not a function" khi mo tai lieu
+//   - Map.getOrInsertComputed -> page.render() nem loi ngay dong dau
+//     (pdf.mjs:15598) nen trang goc trang tinh, du getTextContent van chay
+//     binh thuong nen chuc nang dich khong he hong.
+// Moi polyfill chi gan khi trinh duyet chua co san.
 
 const HEX = [];
 for (let i = 0; i < 256; i++) {
@@ -66,6 +69,46 @@ define(Uint8Array, 'fromHex', function fromHex(input) {
   const out = new Uint8Array(str.length / 2);
   for (let i = 0; i < out.length; i++) {
     out[i] = parseInt(str.substr(i * 2, 2), 16);
+  }
+  return out;
+});
+
+// --- Map/WeakMap upsert (Chrome 146, Firefox 141, Safari 26) ---
+// pdf.js goi getOrInsertComputed o khap noi, ke ca ngay dau page.render().
+function getOrInsert(key, value) {
+  if (this.has(key)) {
+    return this.get(key);
+  }
+  this.set(key, value);
+  return value;
+}
+
+function getOrInsertComputed(key, callback) {
+  if (this.has(key)) {
+    return this.get(key);
+  }
+  const value = callback(key);
+  this.set(key, value);
+  return value;
+}
+
+for (const Ctor of [Map, WeakMap]) {
+  define(Ctor.prototype, 'getOrInsert', getOrInsert);
+  define(Ctor.prototype, 'getOrInsertComputed', getOrInsertComputed);
+}
+
+// --- Promise.try (Chrome 134, Firefox 134, Safari 18.2) ---
+define(Promise, 'try', function attempt(fn, ...args) {
+  return new Promise((resolve) => resolve(fn(...args)));
+});
+
+// --- Set.prototype.intersection (Chrome 122, Firefox 127, Safari 17) ---
+define(Set.prototype, 'intersection', function intersection(other) {
+  const out = new Set();
+  for (const value of this) {
+    if (other.has(value)) {
+      out.add(value);
+    }
   }
   return out;
 });
