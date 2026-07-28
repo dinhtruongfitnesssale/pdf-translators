@@ -68,6 +68,39 @@ const bkKeyEl = $('bkKey');
 const bkPdfEl = $('bkPdf');
 const backupGoBtn = $('backupGo');
 const backupCancelBtn = $('backupCancel');
+// Ngăn kéo Bookmark · Highlight · Ghi chú
+const drawerEl = $('drawer');
+const drawerBtn = $('drawerBtn');
+const drawerCloseBtn = $('drawerClose');
+const drawerWideBtn = $('drawerWide');
+const hlBtn = $('hlBtn');
+const hlToggleBtn = $('hlToggle');
+const hlSwatchesEl = $('hlSwatches');
+const bmAddBtn = $('bmAdd');
+const bmListEl = $('bmList');
+const hlListEl = $('hlList');
+const selbarEl = $('selbar');
+const noteScopeEl = $('noteScope');
+const noteFollowBtn = $('noteFollow');
+const chapAddBtn = $('chapAdd');
+const chapRenBtn = $('chapRen');
+const chapDelBtn = $('chapDel');
+const noteReviewBtn = $('noteReview');
+const noteSynthBtn = $('noteSynth');
+const noteAIBtn = $('noteAI');
+const noteMdBtn = $('noteMd');
+const notePdfBtn = $('notePdf');
+const noteStatEl = $('noteStat');
+const cornellEl = $('cornell');
+const cwEls = { cue: $('cwCue'), note: $('cwNote'), sum: $('cwSum') };
+// Modal nhập một dòng
+const promptEl = $('promptModal');
+const promptEyebrowEl = $('promptEyebrow');
+const promptTitleEl = $('promptTitle');
+const promptLabelEl = $('promptLabel');
+const promptInputEl = $('promptInput');
+const promptOkBtn = $('promptOk');
+const promptCancelBtn = $('promptCancel');
 // Modal xác nhận (dùng chung)
 const confirmEl = $('confirmModal');
 const confirmEyebrowEl = $('confirmEyebrow');
@@ -108,6 +141,40 @@ function confirmDialog({ title, message = '', eyebrow = 'XÁC NHẬN', okText = 
     confirmOkBtn.addEventListener('click', onOk);
     confirmCancelBtn.addEventListener('click', onCancel);
     confirmEl.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+// Hộp nhập một dòng (đặt tên chương…). Trả về Promise<string|null> — null = hủy.
+function promptDialog({ title, label = 'Nội dung', value = '', eyebrow = 'NHẬP', okText = 'Xong' } = {}) {
+  promptEyebrowEl.textContent = eyebrow;
+  promptTitleEl.textContent = title;
+  promptLabelEl.textContent = label;
+  promptInputEl.value = value;
+  promptOkBtn.textContent = okText;
+  promptEl.hidden = false;
+  promptInputEl.focus();
+  promptInputEl.select();
+
+  return new Promise((resolve) => {
+    function cleanup(result) {
+      promptEl.hidden = true;
+      promptOkBtn.removeEventListener('click', onOk);
+      promptCancelBtn.removeEventListener('click', onCancel);
+      promptEl.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKey);
+      resolve(result);
+    }
+    function onOk() { cleanup(promptInputEl.value.trim()); }
+    function onCancel() { cleanup(null); }
+    function onBackdrop(e) { if (e.target === promptEl) cleanup(null); }
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); cleanup(null); }
+      else if (e.key === 'Enter') { e.preventDefault(); cleanup(promptInputEl.value.trim()); }
+    }
+    promptOkBtn.addEventListener('click', onOk);
+    promptCancelBtn.addEventListener('click', onCancel);
+    promptEl.addEventListener('click', onBackdrop);
     document.addEventListener('keydown', onKey);
   });
 }
@@ -219,6 +286,8 @@ function setEntryTranslation(entry, text) {
   const first = entry.blocks.find((b) => b.type === 'text');
   if (first) first.text = text;
   else entry.blocks.unshift({ type: 'text', text });
+  // Dịch lại = thay sạch nội dung → neo lại vệt bôi cũ (không tìm thấy thì bỏ)
+  reanchorText(entry.index, entry.blocks.findIndex((b) => b.type === 'text'));
   renderBlocks(entry);
   savePageTranslation(entry);
 }
@@ -237,11 +306,18 @@ function renderBlocks(entry) {
       ed.contentEditable = 'true';
       ed.spellcheck = false;
       ed.textContent = block.text || '';
+      // Neo cho highlight: mỗi ô chữ được xác định bằng (trang, thứ tự khối)
+      ed.dataset.p = String(entry.index);
+      ed.dataset.b = String(k);
       ed.addEventListener('input', () => {
         block.text = ed.textContent;
         savePageTranslation(entry);
       });
+      // Sửa chữ làm lệch vị trí highlight → neo lại khi rời ô, rồi vẽ lại vệt màu.
+      // (Không vẽ lại trong lúc gõ để khỏi mất con trỏ nhập.)
+      ed.addEventListener('blur', () => { reanchorText(entry.index, k); paintEditor(ed); });
       row.appendChild(ed);
+      paintEditor(ed);
     } else {
       const holder = document.createElement('div');
       holder.className = 'block-img-wrap';
@@ -331,6 +407,7 @@ function buildBlockControls(entry, k) {
 
 function insertTextAfter(entry, k) {
   entry.blocks.splice(k + 1, 0, { type: 'text', text: '' });
+  shiftTextHls(entry.index, 'insert', k + 1);
   renderBlocks(entry);
   savePageTranslation(entry);
   const row = entry.blocksEl.children[k + 1];
@@ -344,6 +421,7 @@ function moveBlock(entry, k, dir) {
   const t = entry.blocks[k];
   entry.blocks[k] = entry.blocks[j];
   entry.blocks[j] = t;
+  shiftTextHls(entry.index, 'swap', [k, j]);
   renderBlocks(entry);
   savePageTranslation(entry);
 }
@@ -361,6 +439,7 @@ async function removeBlock(entry, k) {
   }
   if (entry.blocks.length <= 1) entry.blocks = [{ type: 'text', text: '' }];
   else entry.blocks.splice(k, 1);
+  shiftTextHls(entry.index, 'remove', k);
   renderBlocks(entry);
   savePageTranslation(entry);
 }
@@ -407,6 +486,7 @@ async function insertImageAfter(entry, k) {
   try {
     const block = await fileToImageBlock(file);
     entry.blocks.splice(k + 1, 0, block);
+    shiftTextHls(entry.index, 'insert', k + 1);
     renderBlocks(entry);
     if (savePageTranslation(entry)) setPageStat(entry.statEl, 'đã chèn ảnh', 'done');
   } catch (err) {
@@ -563,6 +643,7 @@ async function removeDoc(id) {
   saveLibrary(loadLibrary().filter((d) => d.id !== id));
   localStorage.removeItem(trKey(id));
   localStorage.removeItem(ovKey(id));
+  localStorage.removeItem(noteKey(id));
   localStorage.removeItem(pageKey(id));
   localStorage.removeItem(tPageKey(id));
   if (localStorage.getItem(LAST_DOC_KEY) === id) localStorage.removeItem(LAST_DOC_KEY);
@@ -627,7 +708,12 @@ function countTranslated(id) {
     if (typeof v === 'string' ? v.trim() : Array.isArray(v) && v.length) n++;
   }
   const ov = readJsonKey(ovKey(id)) || {};
-  return { pages: n, overlay: Object.keys(ov).length };
+  const nt = readJsonKey(noteKey(id)) || {};
+  return {
+    pages: n,
+    overlay: Object.keys(ov).length,
+    marks: (nt.bookmarks || []).length + (nt.highlights || []).length,
+  };
 }
 
 async function buildBackup({ withKey, withPdf }) {
@@ -644,6 +730,7 @@ async function buildBackup({ withKey, withPdf }) {
       tpage: localStorage.getItem(tPageKey(meta.id)),
       tr: readJsonKey(trKey(meta.id)) || {},
       ov: readJsonKey(ovKey(meta.id)) || {},
+      note: readJsonKey(noteKey(meta.id)) || null, // bookmark + highlight + ghi chú
       pdf: null,
     };
     if (withPdf) {
@@ -683,12 +770,14 @@ function openBackupModal() {
     const c = countTranslated(d.id);
     acc.pages += c.pages;
     acc.overlay += c.overlay;
+    acc.marks += c.marks;
     acc.bytes += Number(d.size) || 0;
     return acc;
-  }, { pages: 0, overlay: 0, bytes: 0 });
+  }, { pages: 0, overlay: 0, marks: 0, bytes: 0 });
   backupSummaryEl.innerHTML = lib.length
     ? `Có <b>${lib.length}</b> tài liệu, <b>${totals.pages}</b> trang bản dịch` +
-      (totals.overlay ? ` và <b>${totals.overlay}</b> trang “Đè trang”` : '') + '.'
+      (totals.overlay ? `, <b>${totals.overlay}</b> trang “Đè trang”` : '') +
+      (totals.marks ? `, <b>${totals.marks}</b> bookmark/highlight kèm ghi chú` : '') + '.'
     : 'Chưa có tài liệu nào — bản sao lưu sẽ chỉ gồm cài đặt và API key.';
   bkKeyEl.checked = !!apiKeyEl.value.trim();
   bkKeyEl.disabled = !apiKeyEl.value.trim();
@@ -716,7 +805,8 @@ async function doBackup() {
   closeBackupModal();
   setStatus('Đang gói dữ liệu…', 'working');
   try {
-    flushPage(); // chốt vị trí đang đọc trước khi gói
+    flushPage();  // chốt vị trí đang đọc trước khi gói
+    flushNotes(); // chốt ghi chú đang gõ dở
     const data = await buildBackup({ withKey, withPdf });
     const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
     const stamp = new Date().toISOString().slice(0, 10);
@@ -757,6 +847,7 @@ async function applyBackup(data) {
 
     if (!mergeStore(trKey(d.id), d.tr)) quota = true;
     if (!mergeStore(ovKey(d.id), d.ov)) quota = true;
+    if (!mergeNoteStore(d.id, d.note)) quota = true;
     if (d.page != null) localStorage.setItem(pageKey(d.id), String(d.page));
     if (d.tpage != null) localStorage.setItem(tPageKey(d.id), String(d.tpage));
 
@@ -934,7 +1025,7 @@ let pageRaf = false;
 function schedulePageUpdate() {
   if (pageRaf) return;
   pageRaf = true;
-  requestAnimationFrame(() => { pageRaf = false; updatePageInput(); });
+  requestAnimationFrame(() => { pageRaf = false; updatePageInput(); syncFollowScope(); });
 }
 function updatePageInput() {
   if (!pages.length || document.activeElement === pageInput) return;
@@ -1091,6 +1182,7 @@ async function openFromBytes(ab, name, size, restoring) {
   docId = `${name}::${size}`;
   document.body.classList.add('reading');
   const saved = loadTranslations(docId);
+  NOTE = loadNotes(docId); // bookmark + highlight + ghi chú của tài liệu này
 
   // reset UI
   pages.length = 0;
@@ -1119,9 +1211,18 @@ async function openFromBytes(ab, name, size, restoring) {
     orig.className = 'orig';
     const tag = document.createElement('div');
     tag.className = 'pagetag';
-    tag.textContent = `Trang ${i} / ${pdf.numPages}`;
+    const tagTxt = document.createElement('span');
+    tagTxt.textContent = `Trang ${i} / ${pdf.numPages}`;
+    tag.append(tagTxt, makeBookmarkBtn(i - 1));
     const canvas = document.createElement('canvas');
-    orig.append(tag, canvas);
+    // Canvas nằm trong khung định vị để lớp highlight đè đúng lên trang
+    const cwrap = document.createElement('div');
+    cwrap.className = 'canvas-wrap';
+    const hlLayer = document.createElement('div');
+    hlLayer.className = 'hl-layer';
+    hlLayer.dataset.p = String(i - 1);
+    cwrap.append(canvas, hlLayer);
+    orig.append(tag, cwrap);
     frag.appendChild(orig);
 
     // --- right: translation ---
@@ -1132,6 +1233,7 @@ async function openFromBytes(ab, name, size, restoring) {
     const pnum = document.createElement('span');
     pnum.className = 'pnum';
     pnum.textContent = `Trang ${i}`;
+    const bmT = makeBookmarkBtn(i - 1);
     const retro = document.createElement('button');
     retro.className = 'retro';
     retro.type = 'button';
@@ -1140,13 +1242,13 @@ async function openFromBytes(ab, name, size, restoring) {
     pstat.className = 'pstat';
     const blocksEl = document.createElement('div');
     blocksEl.className = 'blocks';
-    bar.append(pnum, retro, pstat);
+    bar.append(pnum, bmT, retro, pstat);
     trans.append(bar, blocksEl);
     frag.appendChild(trans);
 
     const entry = {
       index: i - 1, pageNum: i, canvas,
-      origEl: orig, transEl: trans,
+      origEl: orig, transEl: trans, hlLayer,
       sourceText: null, // trích chữ trễ (chỉ khi cần dịch)
       blocks: normalizeBlocks(saved[i - 1]), blocksEl, statEl: pstat,
       aspect: defAspect, rendered: false, renderSig: '', renderingSig: null,
@@ -1164,6 +1266,11 @@ async function openFromBytes(ab, name, size, restoring) {
 
   reserveAll();            // chừa đúng chiều cao mỗi trang → nhảy tới trang đang đọc là chuẩn ngay
   setupRenderObserver();   // vẽ trang theo nhu cầu khi cuộn tới (nhanh + nhẹ RAM)
+  for (const e of pages) paintRectLayer(e.hlLayer, e.index, e.aspect, 'orig');
+  // Mục lục nhúng trong PDF → chương (chạy nền, xong thì vẽ lại ngăn kéo)
+  initChapters().then(() => { renderScopeSelect(); renderDrawer(); });
+  setNotesEnabled(true);
+  renderDrawer();
 
   setStatus(restoring ? `Đã mở lại ${pdf.numPages} trang (phiên trước).` : `Đã mở ${pdf.numPages} trang.`, 'done');
   translateBtn.disabled = false;
@@ -1228,6 +1335,7 @@ async function ensureRendered(e) {
     await renderPage(page, e.canvas, e.origEl);
     e.rendered = true;
     e.renderSig = sig;
+    paintRectLayer(e.hlLayer, e.index, e.aspect, 'orig'); // vệt bôi theo đúng tỉ lệ trang
   } catch {}
   finally { e.renderingSig = null; }
 }
@@ -1432,11 +1540,13 @@ async function renderBookOriginal() {
 
   await renderBookPage(bookLeftCanvas, leftNum, halfW, stageH);
   if (token !== bookToken) return;
+  paintRectsOnCanvas(bookLeftCanvas.getContext('2d'), leftNum - 1, bookLeftCanvas.width, 'orig');
   bookLeftCanvas.hidden = false;
   if (hasRight) {
     bookRightCanvas.hidden = false;
     await renderBookPage(bookRightCanvas, rightNum, halfW, stageH);
     if (token !== bookToken) return;
+    paintRectsOnCanvas(bookRightCanvas.getContext('2d'), rightNum - 1, bookRightCanvas.width, 'orig');
   } else {
     bookRightCanvas.hidden = true;
   }
@@ -1700,6 +1810,10 @@ async function closeDoc() {
   docId = null;
   document.body.classList.remove('reading');
   docTitle = 'ban-dich';
+  NOTE = emptyNoteStore();
+  setNotesEnabled(false);
+  hideSelbar();
+  renderDrawer();
   [...pagesEl.querySelectorAll('.orig, .trans')].forEach((n) => n.remove());
   if (overlayObserver) { overlayObserver.disconnect(); overlayObserver = null; }
   overlayPages.length = 0;
@@ -2314,6 +2428,7 @@ async function composeOverlay(entry, opts) {
 
   // 2) dàn chữ Việt theo từng cột: khối dài đẩy các khối dưới cùng cột xuống
   const meas = document.createElement('canvas').getContext('2d');
+  entry.drawBoxes = null;
   const byCol = new Map();
   blocks.forEach((b, i) => {
     if (!byCol.has(b.col)) byCol.set(b.col, []);
@@ -2338,6 +2453,12 @@ async function composeOverlay(entry, opts) {
     }
   }
   const Hp2 = Math.max(Hp, grownBottom + Hp * 0.02);
+  // Vị trí THẬT của từng khối sau khi dàn lại (bản dịch dài đẩy khối xuống) —
+  // cần cho việc lấy chữ nằm dưới một vùng bôi ở chế độ Đè trang.
+  entry.drawBoxes = blocks.map((b) => ({
+    x: b.x, w: b.w, top: b._drawTop,
+    h: Math.max(b.h, b._draw ? b._draw.needed : b.h),
+  }));
 
   // 3) canvas kết quả: nền giấy phủ kín (kể cả phần giãn thêm), rồi dán trang gốc
   const out = opts.canvas;
@@ -2370,6 +2491,8 @@ async function composeOverlay(entry, opts) {
       y += f * OV_LINE;
     }
   }
+  // 6) khi xuất PDF: vẽ luôn vệt bôi vào ảnh trang (trên màn hình đã có lớp DOM riêng)
+  if (opts.mode === 'export') paintRectsOnCanvas(ctx, entry.pageNum - 1, out.width, 'ov');
   return { wPt: Wp, hPt: Hp2 };
 }
 
@@ -2412,15 +2535,21 @@ function buildOverlaySurface() {
     const btn = document.createElement('button');
     btn.className = 'ov-btn';
     btn.type = 'button';
-    head.append(tag, btn);
+    head.append(tag, makeBookmarkBtn(i - 1), btn);
     const canvas = document.createElement('canvas');
     canvas.className = 'ov-canvas';
+    const cwrap = document.createElement('div');
+    cwrap.className = 'canvas-wrap';
+    const hlLayer = document.createElement('div');
+    hlLayer.className = 'hl-layer';
+    hlLayer.dataset.p = String(i - 1);
+    cwrap.append(canvas, hlLayer);
     const stat = document.createElement('div');
     stat.className = 'ov-stat';
-    wrap.append(head, canvas, stat);
+    wrap.append(head, cwrap, stat);
     const rec = all[i - 1];
     const entry = {
-      pageNum: i, el: wrap, canvas, statEl: stat, btnEl: btn, ext: null,
+      pageNum: i, el: wrap, canvas, statEl: stat, btnEl: btn, ext: null, hlLayer,
       translated: rec && Array.isArray(rec.vi) ? rec.vi : null,
       trHash: rec ? rec.h : '', composed: false, composing: false, sig: '',
     };
@@ -2454,9 +2583,11 @@ async function ensureComposed(entry, force) {
   entry.composing = true;
   try {
     await ensureFontsReady();
-    await composeOverlay(entry, { canvas: entry.canvas, cssW, mode: 'screen' });
+    const dims = await composeOverlay(entry, { canvas: entry.canvas, cssW, mode: 'screen' });
     entry.composed = true;
     entry.sig = sig;
+    // Trang đè có thể cao thêm khi bản dịch dài → vẽ lại vệt bôi theo tỉ lệ mới
+    paintRectLayer(entry.hlLayer, entry.pageNum - 1, dims.hPt / dims.wPt, 'ov');
   } catch (e) {
     /* trang lỗi → bỏ qua, giữ canvas cũ */
   } finally {
@@ -2490,6 +2621,7 @@ let ovScrollTimer = null;
 function overlayScroll() {
   if (document.activeElement !== pageInput) pageInput.value = String(overlayCurrentTop() + 1);
   composeVisibleOverlay();
+  syncFollowScope();
   if (suppressScrollSave) return;
   if (ovScrollTimer) return;
   ovScrollTimer = setTimeout(() => {
@@ -2633,6 +2765,1156 @@ async function exportOverlayPdf() {
   }
 }
 
+// =========================================================================
+// BOOKMARK · HIGHLIGHT · GHI CHÚ CORNELL
+// Toàn bộ dữ liệu của ba tính năng này nằm chung MỘT khoá localStorage cho mỗi
+// tài liệu (`ptr.note.<docId>`) → một lần đọc/ghi, dễ sao lưu, dễ dọn khi gỡ sách:
+//   bookmarks  [{ p, label, at }]                       — đánh dấu theo TRANG
+//   highlights [{ id, k:'t'|'r', p, ... , c, q }]        — 't' = chữ trong cột bản
+//              dịch (neo theo vị trí ký tự), 'r' = vùng kéo trên trang gốc / đè
+//              trang (toạ độ chuẩn hoá theo BỀ RỘNG trang → đúng ở mọi mức zoom)
+//   chapters   [{ id, title, from, src }]                — mốc chương (từ mục lục
+//              nhúng trong PDF, hoặc do người đọc tự cắt)
+//   notes      { '<chapterId>'|'__doc__': { cue, note, sum } }  — Cornell
+// =========================================================================
+
+const noteKey = (id) => `ptr.note.${id}`;
+const DOC_SCOPE = '__doc__';
+const HL_COLORS = { y: '#FFE08A', b: '#BEDDF3', p: '#F6C7D8', g: '#CFE7B4' };
+const HL_NAMES = { y: 'Quan trọng', b: 'Định nghĩa', p: 'Chưa hiểu', g: 'Ví dụ' };
+
+function emptyNoteStore() {
+  return { bookmarks: [], highlights: [], chapters: [], notes: {}, chaptersInit: false };
+}
+let NOTE = emptyNoteStore();
+let hlMode = false;         // đang bật kéo-vùng-bôi trên trang gốc?
+let hlColor = 'y';          // màu mặc định khi bôi
+let noteFollow = true;      // ghi chú tự bám chương đang đọc
+let noteTab = 'bm';         // tab đang mở trong ngăn kéo
+
+const uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4);
+
+function loadNotes(id) {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(noteKey(id)) || 'null'); } catch {}
+  const out = emptyNoteStore();
+  if (!s || typeof s !== 'object') return out;
+  out.bookmarks = Array.isArray(s.bookmarks) ? s.bookmarks.filter((b) => b && Number.isFinite(b.p)) : [];
+  out.highlights = Array.isArray(s.highlights) ? s.highlights.filter((h) => h && h.id && Number.isFinite(h.p)) : [];
+  out.chapters = Array.isArray(s.chapters) ? s.chapters.filter((c) => c && c.id && Number.isFinite(c.from)) : [];
+  out.notes = (s.notes && typeof s.notes === 'object') ? s.notes : {};
+  out.chaptersInit = !!s.chaptersInit;
+  return out;
+}
+
+let noteSaveTimer = null;
+function saveNotes() {
+  if (!docId) return;
+  // Bỏ các ô Cornell rỗng (chỉ mở ra xem rồi thôi) cho khỏi phình bộ nhớ
+  const notes = {};
+  for (const [k, v] of Object.entries(NOTE.notes)) {
+    if (v && ((v.cue || '').trim() || (v.note || '').trim() || (v.sum || '').trim())) notes[k] = v;
+  }
+  try {
+    localStorage.setItem(noteKey(docId), JSON.stringify({ ...NOTE, notes }));
+  } catch {
+    setStatus('Không lưu được ghi chú: bộ nhớ trình duyệt đã đầy.', 'error');
+  }
+}
+// Gõ ghi chú thì ghi trễ (300ms) cho đỡ tốn, nhưng mọi thao tác bấm nút lưu ngay.
+function scheduleNoteSave() {
+  if (noteSaveTimer) clearTimeout(noteSaveTimer);
+  noteSaveTimer = setTimeout(() => { noteSaveTimer = null; saveNotes(); }, 300);
+}
+function flushNotes() {
+  if (noteSaveTimer) { clearTimeout(noteSaveTimer); noteSaveTimer = null; }
+  saveNotes();
+}
+window.addEventListener('pagehide', flushNotes);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushNotes();
+});
+
+// Gộp ghi chú khi khôi phục từ bản sao lưu: bookmark gộp theo trang, highlight gộp
+// theo id, ô Cornell nào có nội dung trong file thì lấy theo file.
+function mergeNoteStore(id, incoming) {
+  if (!incoming || typeof incoming !== 'object') return true;
+  const cur = readJsonKey(noteKey(id));
+  let out = incoming;
+  if (cur && typeof cur === 'object') {
+    const bm = new Map();
+    for (const b of [...(cur.bookmarks || []), ...(incoming.bookmarks || [])]) if (b && Number.isFinite(b.p)) bm.set(b.p, b);
+    const hl = new Map();
+    for (const h of [...(cur.highlights || []), ...(incoming.highlights || [])]) if (h && h.id) hl.set(h.id, h);
+    out = {
+      bookmarks: [...bm.values()].sort((a, b) => a.p - b.p),
+      highlights: [...hl.values()],
+      chapters: (incoming.chapters && incoming.chapters.length) ? incoming.chapters : (cur.chapters || []),
+      chaptersInit: !!(cur.chaptersInit || incoming.chaptersInit),
+      notes: { ...(cur.notes || {}), ...(incoming.notes || {}) },
+    };
+  }
+  try { localStorage.setItem(noteKey(id), JSON.stringify(out)); return true; }
+  catch { return false; }
+}
+
+// ---------- Chương ----------
+// Ưu tiên MỤC LỤC nhúng sẵn trong file PDF (hầu hết sách/giáo trình đều có) —
+// không bắt người đọc khai báo tay. Không có mục lục thì tự cắt bằng nút.
+async function destPage(dest) {
+  try {
+    let d = dest;
+    if (typeof d === 'string') d = await pdfDoc.getDestination(d);
+    if (!Array.isArray(d) || !d.length) return null;
+    const ref = d[0];
+    if (ref && typeof ref === 'object') return await pdfDoc.getPageIndex(ref);
+    if (typeof ref === 'number') return ref;
+  } catch {}
+  return null;
+}
+async function chaptersFromOutline() {
+  let tree = null;
+  try { tree = await pdfDoc.getOutline(); } catch { return []; }
+  if (!Array.isArray(tree) || !tree.length) return [];
+  // Mục lục chỉ có một mục gốc (kiểu "Nội dung") → lấy các mục con làm chương
+  let level = tree;
+  if (level.length === 1 && Array.isArray(level[0].items) && level[0].items.length > 1) level = level[0].items;
+  const res = [];
+  for (const it of level) {
+    const p = await destPage(it.dest);
+    if (p == null || p < 0) continue;
+    res.push({ id: uid(), title: String(it.title || '').trim() || `Trang ${p + 1}`, from: p, src: 'outline' });
+  }
+  res.sort((a, b) => a.from - b.from);
+  const out = [];
+  for (const c of res) if (!out.length || out[out.length - 1].from !== c.from) out.push(c);
+  return out.slice(0, 300);
+}
+async function initChapters() {
+  if (!pdfDoc || NOTE.chaptersInit) return;
+  const id = docId;
+  NOTE.chaptersInit = true;
+  const list = await chaptersFromOutline();
+  if (id !== docId) return; // đổi tài liệu giữa chừng → đừng ghi nhầm sang sách khác
+  if (list.length) NOTE.chapters = list;
+  saveNotes();
+}
+function sortedChapters() { return NOTE.chapters.slice().sort((a, b) => a.from - b.from); }
+function chapterAt(pageIdx) {
+  const list = sortedChapters();
+  let cur = null;
+  for (const c of list) { if (c.from <= pageIdx) cur = c; else break; }
+  return cur;
+}
+function chapterById(id) { return NOTE.chapters.find((c) => c.id === id) || null; }
+function chapterRange(ch) {
+  const list = sortedChapters();
+  const i = list.findIndex((c) => c.id === ch.id);
+  const total = pdfDoc ? pdfDoc.numPages : (pages.length || 1);
+  const to = (i >= 0 && i + 1 < list.length) ? list[i + 1].from - 1 : total - 1;
+  return [ch.from, Math.max(ch.from, to)];
+}
+function chapterLabel(ch) {
+  const [a, b] = chapterRange(ch);
+  return `${ch.title} (tr.${a + 1}–${b + 1})`;
+}
+// Chương chứa một trang; không có mốc chương nào thì ghi vào note cả tài liệu.
+function scopeForPage(p) {
+  const c = chapterAt(p);
+  return c ? c.id : DOC_SCOPE;
+}
+
+// ---------- Trang đang đọc (dùng chung cho bookmark / ghi chú) ----------
+// Trả về chỉ số trang PDF (0-based). Riêng "đọc sách + bản dịch" thì số trang là
+// trang bản dịch đã dàn lại, không suy ra được trang gốc → trả -1.
+function readingPageIndex() {
+  if (!pdfDoc) return -1;
+  if (viewMode === 'overlay') return overlayPages.length ? overlayCurrentTop() : 0;
+  if (readMode === 'book') return viewMode === 'trans' ? -1 : bookIndex;
+  return pages.length ? currentTopPage() : 0;
+}
+function jumpToPage(idx) {
+  if (!pdfDoc) return;
+  pageInput.value = String(idx + 1);
+  gotoPageFromInput();
+}
+
+// ---------- Bookmark ----------
+function bmIndex(p) { return NOTE.bookmarks.findIndex((b) => b.p === p); }
+function isBookmarked(p) { return bmIndex(p) >= 0; }
+// Nhãn mặc định: mấy chữ đầu của bản dịch trang đó → danh sách đọc ra nghĩa,
+// thay vì chỉ trơ ra "Trang 47".
+function defaultBmLabel(p) {
+  let t = '';
+  const e = pages[p];
+  if (e) t = entryPlainText(e);
+  if (!t) {
+    const ov = overlayPages[p];
+    if (ov && Array.isArray(ov.translated)) t = ov.translated.filter(Boolean).join(' ');
+  }
+  t = (t || '').replace(/\s+/g, ' ').trim();
+  return t ? t.slice(0, 60) : `Trang ${p + 1}`;
+}
+function makeBookmarkBtn(p) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'bm-btn' + (isBookmarked(p) ? ' on' : '');
+  b.dataset.p = String(p);
+  b.textContent = isBookmarked(p) ? '★' : '☆';
+  b.title = 'Đánh dấu trang này (phím B)';
+  b.setAttribute('aria-label', `Đánh dấu trang ${p + 1}`);
+  b.addEventListener('click', (e) => { e.stopPropagation(); toggleBookmark(p); });
+  return b;
+}
+function refreshBookmarkBtns(p) {
+  const on = isBookmarked(p);
+  document.querySelectorAll(`.bm-btn[data-p="${p}"]`).forEach((b) => {
+    b.classList.toggle('on', on);
+    b.textContent = on ? '★' : '☆';
+  });
+}
+function toggleBookmark(p) {
+  if (!docId) { setStatus('Chưa mở tài liệu nào để đánh dấu.', 'error'); return; }
+  if (p == null || p < 0) {
+    setStatus('Chế độ “Đọc sách + Bản dịch” không xác định được trang gốc — chuyển sang Bản gốc hoặc Kéo lướt để đánh dấu.', 'error');
+    return;
+  }
+  const i = bmIndex(p);
+  if (i >= 0) { NOTE.bookmarks.splice(i, 1); setStatus(`Đã bỏ đánh dấu trang ${p + 1}.`, ''); }
+  else {
+    NOTE.bookmarks.push({ p, label: defaultBmLabel(p), at: Date.now() });
+    NOTE.bookmarks.sort((a, b) => a.p - b.p);
+    setStatus(`Đã đánh dấu trang ${p + 1}.`, 'done');
+  }
+  saveNotes();
+  refreshBookmarkBtns(p);
+  if (noteTab === 'bm') renderBmList();
+}
+
+// ---------- Highlight: dữ liệu ----------
+function textHls(p, b) { return NOTE.highlights.filter((h) => h.k === 't' && h.p === p && h.b === b); }
+// Vùng bôi gắn với đúng MẶT PHẲNG đã vẽ nó: 'orig' (trang gốc — kéo lướt & đọc
+// sách) hay 'ov' (đè trang). Hai mặt phẳng không cùng hệ toạ độ vì trang đè giãn
+// cao thêm khi bản dịch dài, nên vẽ chéo sang nhau sẽ lệch chỗ.
+function rectHls(p, surface) {
+  return NOTE.highlights.filter((h) =>
+    h.k === 'r' && h.p === p && (surface ? (h.o ? 'ov' : 'orig') === surface : true));
+}
+function hlById(id) { return NOTE.highlights.find((h) => h.id === id) || null; }
+function removeHl(id) {
+  const h = hlById(id);
+  if (!h) return;
+  NOTE.highlights = NOTE.highlights.filter((x) => x.id !== id);
+  saveNotes();
+  repaintHl(h);
+  if (noteTab === 'hl') renderHlList();
+}
+function setHlColor(id, c) {
+  const h = hlById(id);
+  if (!h) return;
+  h.c = c;
+  saveNotes();
+  repaintHl(h);
+  if (noteTab === 'hl') renderHlList();
+}
+// Vẽ lại đúng chỗ chứa một highlight (cột bản dịch hoặc lớp đè trên canvas)
+function repaintHl(h) {
+  if (h.k === 't') {
+    const ed = document.querySelector(`.editor[data-p="${h.p}"][data-b="${h.b}"]`);
+    if (ed) paintEditor(ed);
+  } else {
+    const e = pages[h.p];
+    if (e) paintRectLayer(e.hlLayer, h.p, e.aspect, 'orig');
+    const ov = overlayPages[h.p];
+    if (ov) paintRectLayer(ov.hlLayer, h.p, ovAspect(ov), 'ov');
+    if (readMode === 'book' && viewMode === 'orig' && pdfDoc) renderBook();
+  }
+}
+
+// ---------- Highlight: chữ trong cột bản dịch ----------
+// Lưu theo VỊ TRÍ KÝ TỰ (không nhét thẻ vào nội dung) → bản dịch vẫn là chữ thuần
+// như cũ; kèm `q` (đoạn chữ đã bôi) để neo lại khi bạn sửa chữ làm lệch vị trí.
+function paintEditor(ed) {
+  if (!ed) return;
+  const p = Number(ed.dataset.p), b = Number(ed.dataset.b);
+  const entry = pages[p];
+  const block = entry && entry.blocks[b];
+  if (!block || block.type !== 'text') return;
+  const text = block.text || '';
+  const hs = textHls(p, b).slice().sort((a, z) => a.s - z.s);
+  if (!hs.length) {
+    if (ed.childElementCount) ed.textContent = text; // gỡ vệt cũ, chuẩn hoá lại DOM
+    return;
+  }
+  let html = '', at = 0;
+  for (const h of hs) {
+    const s = Math.max(at, Math.min(h.s, text.length));
+    const e = Math.max(s, Math.min(h.e, text.length));
+    if (e <= s) continue;
+    html += escapeHtml(text.slice(at, s));
+    html += `<mark data-h="${h.id}" data-c="${h.c}">${escapeHtml(text.slice(s, e))}</mark>`;
+    at = e;
+  }
+  html += escapeHtml(text.slice(at));
+  ed.innerHTML = html;
+}
+// Vị trí ký tự của một điểm trong ô chữ (tính theo nội dung thuần, bỏ qua thẻ <mark>)
+function offsetIn(root, node, off) {
+  if (node === root) {
+    let n = 0;
+    for (let i = 0; i < off && i < root.childNodes.length; i++) n += (root.childNodes[i].textContent || '').length;
+    return n;
+  }
+  let n = 0;
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let cur;
+  while ((cur = w.nextNode())) {
+    if (cur === node) return n + off;
+    n += cur.nodeValue.length;
+  }
+  return n;
+}
+function textSelectionInfo() {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  const r = sel.getRangeAt(0);
+  const startEl = r.startContainer.nodeType === 1 ? r.startContainer : r.startContainer.parentElement;
+  const ed = startEl && startEl.closest ? startEl.closest('.editor') : null;
+  if (!ed || !ed.contains(r.endContainer)) return null;
+  const a = offsetIn(ed, r.startContainer, r.startOffset);
+  const z = offsetIn(ed, r.endContainer, r.endOffset);
+  const s = Math.min(a, z), e = Math.max(a, z);
+  if (e - s < 1) return null;
+  return { ed, s, e, rect: r.getBoundingClientRect() };
+}
+function addTextHl(info, color) {
+  const p = Number(info.ed.dataset.p), b = Number(info.ed.dataset.b);
+  const entry = pages[p];
+  const block = entry && entry.blocks[b];
+  if (!block) return null;
+  const text = block.text || '';
+  // Bôi đè lên vệt cũ → gỡ vệt cũ đi cho gọn, một vùng chỉ một màu
+  NOTE.highlights = NOTE.highlights.filter(
+    (h) => !(h.k === 't' && h.p === p && h.b === b && h.s < info.e && h.e > info.s));
+  const h = { id: uid(), k: 't', p, b, s: info.s, e: info.e, c: color, q: text.slice(info.s, info.e) };
+  NOTE.highlights.push(h);
+  saveNotes();
+  paintEditor(info.ed);
+  if (noteTab === 'hl') renderHlList();
+  return h;
+}
+// Sau khi sửa chữ: tìm lại đoạn đã bôi trong nội dung mới (chọn vị trí gần chỗ cũ
+// nhất). Không tìm thấy nữa → bỏ vệt bôi đó thay vì để nó trôi lung tung.
+function nearestIndex(text, q, want) {
+  if (!q) return -1;
+  let best = -1, bestD = Infinity, i = text.indexOf(q);
+  while (i >= 0) {
+    const d = Math.abs(i - want);
+    if (d < bestD) { bestD = d; best = i; }
+    i = text.indexOf(q, i + 1);
+  }
+  return best;
+}
+// Thêm / xoá / đổi chỗ khối chữ làm số thứ tự khối lệch đi → dời neo highlight theo,
+// nếu không vệt bôi sẽ nhảy sang nhầm khối.
+function shiftTextHls(p, op, k) {
+  let dropped = 0;
+  for (const h of NOTE.highlights) {
+    if (h.k !== 't' || h.p !== p) continue;
+    if (op === 'insert') { if (h.b >= k) h.b++; }
+    else if (op === 'remove') {
+      if (h.b === k) { h.dead = true; dropped++; }
+      else if (h.b > k) h.b--;
+    } else if (op === 'swap') {
+      if (h.b === k[0]) h.b = k[1];
+      else if (h.b === k[1]) h.b = k[0];
+    }
+  }
+  if (dropped) NOTE.highlights = NOTE.highlights.filter((h) => !h.dead);
+  saveNotes();
+  if (noteTab === 'hl') renderHlList();
+}
+
+function reanchorText(p, b) {
+  const entry = pages[p];
+  const block = entry && entry.blocks[b];
+  if (!block) return;
+  const text = block.text || '';
+  let changed = false, dropped = 0;
+  for (const h of NOTE.highlights) {
+    if (h.k !== 't' || h.p !== p || h.b !== b) continue;
+    if (text.slice(h.s, h.e) === h.q) continue; // vẫn đúng chỗ
+    const i = nearestIndex(text, h.q, h.s);
+    if (i >= 0) { h.s = i; h.e = i + h.q.length; }
+    else { h.dead = true; dropped++; }
+    changed = true;
+  }
+  if (dropped) NOTE.highlights = NOTE.highlights.filter((h) => !h.dead);
+  if (changed) {
+    saveNotes();
+    if (noteTab === 'hl') renderHlList();
+    if (dropped) setStatus(`${dropped} vệt bôi đã mất chỗ neo sau khi bạn sửa chữ nên được gỡ bỏ.`, '');
+  }
+}
+
+// ---------- Highlight: vùng kéo trên trang gốc / đè trang ----------
+// Toạ độ lưu theo BỀ RỘNG trang (x, y, w, h đều là tỉ lệ so với bề rộng) → phóng
+// to, đổi chế độ xem hay xuất PDF đều đặt lại đúng chỗ, không cần tính lại gì.
+function ovAspect(ovEntry) {
+  const w = parseFloat(ovEntry.canvas.style.width) || 0;
+  const h = parseFloat(ovEntry.canvas.style.height) || 0;
+  return (w > 0 && h > 0) ? h / w : 1.414;
+}
+function paintRectLayer(layer, p, aspect, surface) {
+  if (!layer) return;
+  const asp = (aspect > 0.05 && Number.isFinite(aspect)) ? aspect : 1.414;
+  layer.innerHTML = '';
+  for (const h of rectHls(p, surface)) {
+    const d = document.createElement('div');
+    d.className = 'hl-rect';
+    d.dataset.h = h.id;
+    d.style.left = (h.x * 100) + '%';
+    d.style.width = (h.w * 100) + '%';
+    d.style.top = (h.y / asp * 100) + '%';   // % chiều dọc = (y·W)/H = y/tỉ-lệ-trang
+    d.style.height = (h.h / asp * 100) + '%';
+    d.style.background = HL_COLORS[h.c] || HL_COLORS.y;
+    d.title = (h.q ? h.q.slice(0, 80) + ' — ' : '') + 'bấm để đổi màu / gửi vào ghi chú';
+    layer.appendChild(d);
+  }
+}
+function repaintAllRectLayers() {
+  for (const e of pages) paintRectLayer(e.hlLayer, e.index, e.aspect, 'orig');
+  for (const e of overlayPages) paintRectLayer(e.hlLayer, e.pageNum - 1, ovAspect(e), 'ov');
+}
+// Vẽ thẳng vào canvas — dùng cho chế độ Đọc sách và lúc xuất PDF đè trang
+function paintRectsOnCanvas(ctx, p, widthPx, surface) {
+  const hs = rectHls(p, surface);
+  if (!hs.length || !ctx) return;
+  ctx.save();
+  ctx.globalAlpha = 0.42;
+  for (const h of hs) {
+    ctx.fillStyle = HL_COLORS[h.c] || HL_COLORS.y;
+    ctx.fillRect(h.x * widthPx, h.y * widthPx, h.w * widthPx, h.h * widthPx);
+  }
+  ctx.restore();
+}
+// Khối chữ của một trang (dùng lại bộ trích khối của chế độ Đè trang), có nhớ đệm
+async function pageBlocksExt(p) {
+  const e = pages[p], ov = overlayPages[p];
+  if (e && e.ext) return e.ext;
+  if (ov && ov.ext) return ov.ext;
+  if (!pdfDoc) return null;
+  try {
+    const ext = await extractBlocks(await pdfDoc.getPage(p + 1));
+    if (e) e.ext = ext;
+    if (ov) ov.ext = ext;
+    return ext;
+  } catch { return null; }
+}
+// Chữ nằm dưới một vùng đã bôi → để gửi vào ghi chú. Ở chế độ Đè trang lấy luôn
+// bản tiếng Việt đang hiển thị (và đúng vị trí đã dàn lại), chỗ khác lấy bản gốc.
+async function textUnderRect(p, h) {
+  const ext = await pageBlocksExt(p);
+  if (!ext || !ext.blocks.length) return '';
+  const { Wp, blocks } = ext;
+  // Vùng bôi vẽ trên trang ĐÈ: dò theo vị trí khối ĐÃ DÀN LẠI và lấy luôn câu
+  // tiếng Việt đang hiện. Vẽ trên trang GỐC: dò theo vị trí gốc, lấy câu tiếng Anh.
+  const ov = h.o ? overlayPages[p] : null;
+  const boxes = (ov && Array.isArray(ov.drawBoxes) && ov.drawBoxes.length === blocks.length) ? ov.drawBoxes : blocks;
+  const vi = (ov && Array.isArray(ov.translated) && ov.translated.length === blocks.length) ? ov.translated : null;
+  const x0 = h.x * Wp, y0 = h.y * Wp, x1 = (h.x + h.w) * Wp, y1 = (h.y + h.h) * Wp;
+  const out = [];
+  boxes.forEach((box, i) => {
+    if (box.x < x1 && box.x + box.w > x0 && box.top < y1 && box.top + box.h > y0) {
+      const t = (vi && String(vi[i] || '').trim()) || blocks[i].text;
+      if (t) out.push(t);
+    }
+  });
+  return out.join(' ').replace(/\s+/g, ' ').trim().slice(0, 500);
+}
+
+// Kéo một vùng để bôi (chỉ khi đã bật chế độ bôi)
+let drawing = null;
+function onLayerPointerDown(e) {
+  if (!hlMode || e.button != null && e.button !== 0) return;
+  const layer = e.target.closest ? e.target.closest('.hl-layer') : null;
+  if (!layer) return;
+  e.preventDefault();
+  const box = layer.getBoundingClientRect();
+  if (box.width < 20) return;
+  hideSelbar();
+  const draft = document.createElement('div');
+  draft.className = 'hl-draft';
+  layer.appendChild(draft);
+  drawing = { layer, draft, box, p: Number(layer.dataset.p), x0: e.clientX - box.left, y0: e.clientY - box.top };
+  window.addEventListener('pointermove', onLayerPointerMove);
+  window.addEventListener('pointerup', onLayerPointerUp, { once: true });
+}
+function onLayerPointerMove(e) {
+  if (!drawing) return;
+  const x1 = Math.min(Math.max(0, e.clientX - drawing.box.left), drawing.box.width);
+  const y1 = Math.min(Math.max(0, e.clientY - drawing.box.top), drawing.box.height);
+  const l = Math.min(drawing.x0, x1), t = Math.min(drawing.y0, y1);
+  drawing.draft.style.cssText =
+    `position:absolute;left:${l}px;top:${t}px;width:${Math.abs(x1 - drawing.x0)}px;height:${Math.abs(y1 - drawing.y0)}px;`;
+  drawing.last = { l, t, w: Math.abs(x1 - drawing.x0), h: Math.abs(y1 - drawing.y0) };
+}
+async function onLayerPointerUp() {
+  const d = drawing;
+  drawing = null;
+  window.removeEventListener('pointermove', onLayerPointerMove);
+  if (!d) return;
+  d.draft.remove();
+  const r = d.last;
+  if (!r || r.w < 8 || r.h < 6) return; // chạm nhẹ, không phải kéo vùng
+  const W = d.box.width;
+  const h = {
+    id: uid(), k: 'r', p: d.p, c: hlColor,
+    o: viewMode === 'overlay' ? 1 : 0, // vẽ trên mặt phẳng nào thì hiện ở đó
+    x: r.l / W, y: r.t / W, w: r.w / W, h: r.h / W, q: '',
+  };
+  NOTE.highlights.push(h);
+  saveNotes();
+  repaintHl(h);
+  if (noteTab === 'hl') renderHlList();
+  // Lấy sẵn chữ nằm dưới vùng bôi để danh sách/ghi chú/xuất file dùng được ngay
+  try {
+    h.q = await textUnderRect(d.p, h);
+    saveNotes();
+    if (noteTab === 'hl') renderHlList();
+  } catch {}
+  const el = d.layer.querySelector(`.hl-rect[data-h="${h.id}"]`);
+  if (el) openSelbarForHl(h.id, el.getBoundingClientRect());
+}
+document.addEventListener('pointerdown', onLayerPointerDown);
+
+function setHlMode(on) {
+  hlMode = !!on;
+  document.body.classList.toggle('hl-mode', hlMode);
+  hlBtn.setAttribute('aria-pressed', String(hlMode));
+  hlBtn.classList.toggle('btn-primary', hlMode);
+  hlToggleBtn.setAttribute('aria-pressed', String(hlMode));
+  hlToggleBtn.textContent = hlMode ? '🖍 Tắt bôi trên trang gốc' : '🖍 Bật bôi trên trang gốc';
+  hlToggleBtn.classList.toggle('btn-primary', hlMode);
+  if (hlMode) setStatus('Chế độ bôi: kéo một vùng trên trang gốc để tô màu. Bấm 🖍 hoặc phím H để tắt.', 'working');
+  else setStatus('');
+}
+
+// ---------- Thanh nổi chọn màu / gửi vào ghi chú ----------
+let selCtx = null;
+function hideSelbar() { selbarEl.hidden = true; selbarEl.innerHTML = ''; selCtx = null; }
+function buildSelbar(onColor, onSend, onDel) {
+  selbarEl.innerHTML = '';
+  for (const c of Object.keys(HL_COLORS)) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sw';
+    b.style.background = HL_COLORS[c];
+    b.title = HL_NAMES[c];
+    b.setAttribute('aria-label', HL_NAMES[c]);
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', () => onColor(c));
+    selbarEl.appendChild(b);
+  }
+  const sep = document.createElement('span');
+  sep.className = 'sep';
+  selbarEl.appendChild(sep);
+  const send = document.createElement('button');
+  send.type = 'button';
+  send.className = 'sb';
+  send.textContent = '→ Ghi chú';
+  send.title = 'Đưa đoạn này vào cột NOTES của chương đang đọc';
+  send.addEventListener('mousedown', (e) => e.preventDefault());
+  send.addEventListener('click', onSend);
+  selbarEl.appendChild(send);
+  if (onDel) {
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'sb sb-del';
+    del.textContent = '✕';
+    del.title = 'Xoá vệt bôi';
+    del.addEventListener('mousedown', (e) => e.preventDefault());
+    del.addEventListener('click', onDel);
+    selbarEl.appendChild(del);
+  }
+}
+function placeSelbar(rect) {
+  selbarEl.hidden = false;
+  const w = selbarEl.offsetWidth, h = selbarEl.offsetHeight;
+  let left = rect.left + rect.width / 2 - w / 2;
+  left = Math.min(Math.max(8, left), window.innerWidth - w - 8);
+  let top = rect.top - h - 8;
+  if (top < 8) top = Math.min(rect.bottom + 8, window.innerHeight - h - 8);
+  selbarEl.style.left = left + 'px';
+  selbarEl.style.top = top + 'px';
+}
+function openSelbarForSelection(info) {
+  selCtx = { mode: 'sel', info };
+  buildSelbar(
+    (c) => {
+      hlColor = c;
+      const h = addTextHl(info, c);
+      hideSelbar();
+      window.getSelection().removeAllRanges();
+      renderSwatches();
+      if (h) setStatus(`Đã bôi ${HL_NAMES[c].toLowerCase()} ở trang ${h.p + 1}.`, 'done');
+    },
+    () => {
+      const h = addTextHl(info, hlColor);
+      hideSelbar();
+      window.getSelection().removeAllRanges();
+      if (h) sendHlToNote(h);
+    },
+    null,
+  );
+  placeSelbar(info.rect);
+}
+function openSelbarForHl(id, rect) {
+  const h = hlById(id);
+  if (!h) return;
+  selCtx = { mode: 'hl', id };
+  buildSelbar(
+    (c) => { hlColor = c; setHlColor(id, c); hideSelbar(); renderSwatches(); },
+    () => { hideSelbar(); sendHlToNote(h); },
+    () => { removeHl(id); hideSelbar(); },
+  );
+  placeSelbar(rect);
+}
+// Bôi chữ ở cột bản dịch: quét chọn xong là hiện thanh màu
+function onMaybeSelection() {
+  setTimeout(() => {
+    if (selCtx && selCtx.mode === 'hl') return;
+    const info = textSelectionInfo();
+    if (info) openSelbarForSelection(info);
+    else if (selCtx) hideSelbar();
+  }, 10);
+}
+document.addEventListener('mouseup', onMaybeSelection);
+document.addEventListener('touchend', onMaybeSelection);
+// Bấm vào một vệt bôi sẵn có → đổi màu / gửi ghi chú / xoá
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (selbarEl.contains(t)) return;
+  const rect = t.closest ? t.closest('.hl-rect') : null;
+  if (rect) { openSelbarForHl(rect.dataset.h, rect.getBoundingClientRect()); return; }
+  const mk = t.closest ? t.closest('mark[data-h]') : null;
+  if (mk) { openSelbarForHl(mk.dataset.h, mk.getBoundingClientRect()); return; }
+  if (selCtx && selCtx.mode === 'hl') hideSelbar();
+});
+window.addEventListener('scroll', () => { if (selCtx) hideSelbar(); }, { passive: true });
+
+// ---------- Ngăn kéo ----------
+function drawerOpen() { return !drawerEl.hidden; }
+function setDrawer(open) {
+  const keep = getCurrentPageIndex();
+  drawerEl.hidden = !open;
+  document.body.classList.toggle('drawer-open', open);
+  drawerBtn.setAttribute('aria-expanded', String(open));
+  drawerBtn.classList.toggle('btn-primary', open);
+  if (open) renderDrawer();
+  else hideSelbar();
+  relayoutWidth(keep); // khung đọc hẹp/rộng lại → dựng lại khổ trang cho khớp
+}
+function toggleDrawer() { setDrawer(!drawerOpen()); }
+// Mở/đóng ngăn kéo làm đổi bề rộng cột đọc: chừa lại chiều cao và giữ đúng trang
+function relayoutWidth(keep) {
+  if (!pdfDoc) return;
+  if (viewMode === 'overlay') {
+    for (const e of overlayPages) e.composed = false;
+    requestAnimationFrame(() => { scrollOverlayToPage(keep); composeVisibleOverlay(); });
+    return;
+  }
+  if (readMode === 'book') { renderBook(); return; }
+  requestAnimationFrame(() => {
+    if (viewMode !== 'trans') reserveAll();
+    if (pages.length) scrollToPage(keep);
+    renderVisible();
+    repaintAllRectLayers();
+  });
+}
+function setNoteTab(tab) {
+  noteTab = tab;
+  [...drawerEl.querySelectorAll('.dtab')].forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  $('paneBm').hidden = tab !== 'bm';
+  $('paneHl').hidden = tab !== 'hl';
+  $('paneNote').hidden = tab !== 'note';
+  renderDrawer();
+}
+function setNotesEnabled(on) {
+  drawerBtn.disabled = !on;
+  hlBtn.disabled = !on;
+  if (!on && hlMode) setHlMode(false);
+}
+function renderDrawer() {
+  if (!drawerOpen()) return;
+  if (noteTab === 'bm') renderBmList();
+  else if (noteTab === 'hl') { renderSwatches(); renderHlList(); }
+  else { renderScopeSelect(); loadScopeIntoUI(); syncFollowScope(); }
+}
+function emptyMsg(text) {
+  const d = document.createElement('div');
+  d.className = 'list-empty';
+  d.textContent = text;
+  return d;
+}
+function renderBmList() {
+  bmListEl.innerHTML = '';
+  if (!docId) { bmListEl.appendChild(emptyMsg('Chưa mở tài liệu nào.')); return; }
+  const list = NOTE.bookmarks.slice().sort((a, b) => a.p - b.p);
+  if (!list.length) {
+    bmListEl.appendChild(emptyMsg('Chưa có bookmark. Bấm ☆ trên một trang, dùng nút phía trên, hoặc bấm phím B khi đang đọc.'));
+    return;
+  }
+  for (const bm of list) {
+    const row = document.createElement('div');
+    row.className = 'item';
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'item-go';
+    go.innerHTML = `<span class="item-p">TRANG ${bm.p + 1}</span><span class="item-t">${escapeHtml(bm.label || `Trang ${bm.p + 1}`)}</span>`;
+    go.addEventListener('click', () => { jumpToPage(bm.p); if (isMobile()) setDrawer(false); });
+    const ren = document.createElement('button');
+    ren.type = 'button';
+    ren.className = 'item-x';
+    ren.textContent = '✎';
+    ren.title = 'Đổi tên bookmark';
+    ren.addEventListener('click', async () => {
+      const v = await promptDialog({ eyebrow: 'BOOKMARK', title: `Đặt tên cho trang ${bm.p + 1}`, label: 'Tên bookmark', value: bm.label || '' });
+      if (v == null) return;
+      bm.label = v || `Trang ${bm.p + 1}`;
+      saveNotes();
+      renderBmList();
+    });
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'item-x';
+    del.textContent = '✕';
+    del.title = 'Bỏ bookmark';
+    del.addEventListener('click', () => toggleBookmark(bm.p));
+    row.append(go, ren, del);
+    bmListEl.appendChild(row);
+  }
+}
+function renderSwatches() {
+  hlSwatchesEl.innerHTML = '';
+  for (const c of Object.keys(HL_COLORS)) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sw' + (c === hlColor ? ' on' : '');
+    b.innerHTML = `<i style="background:${HL_COLORS[c]}"></i>${HL_NAMES[c]}`;
+    b.addEventListener('click', () => { hlColor = c; renderSwatches(); });
+    hlSwatchesEl.appendChild(b);
+  }
+}
+function renderHlList() {
+  hlListEl.innerHTML = '';
+  if (!docId) { hlListEl.appendChild(emptyMsg('Chưa mở tài liệu nào.')); return; }
+  const list = NOTE.highlights.slice().sort((a, b) => a.p - b.p);
+  if (!list.length) {
+    hlListEl.appendChild(emptyMsg('Chưa bôi gì. Ở cột bản dịch: quét chọn chữ rồi chọn màu. Trên trang gốc: bật nút bôi rồi kéo một vùng.'));
+    return;
+  }
+  for (const h of list) {
+    const row = document.createElement('div');
+    row.className = 'item';
+    const dot = document.createElement('span');
+    dot.className = 'item-dot';
+    dot.style.background = HL_COLORS[h.c] || HL_COLORS.y;
+    dot.title = HL_NAMES[h.c] || '';
+    const go = document.createElement('button');
+    go.type = 'button';
+    go.className = 'item-go';
+    const q = (h.q || '').trim();
+    go.innerHTML = `<span class="item-p">TRANG ${h.p + 1}${h.k === 'r' ? (h.o ? ' · VÙNG (ĐÈ TRANG)' : ' · VÙNG (TRANG GỐC)') : ''}</span>` +
+      `<span class="item-t quote">${q ? escapeHtml(q.slice(0, 160)) : '(vùng đã bôi)'}</span>`;
+    go.addEventListener('click', () => { jumpToPage(h.p); if (isMobile()) setDrawer(false); });
+    const send = document.createElement('button');
+    send.type = 'button';
+    send.className = 'item-x';
+    send.textContent = '→';
+    send.title = 'Gửi vào ghi chú Cornell';
+    send.addEventListener('click', () => sendHlToNote(h));
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'item-x';
+    del.textContent = '✕';
+    del.title = 'Xoá vệt bôi';
+    del.addEventListener('click', () => removeHl(h.id));
+    row.append(dot, go, send, del);
+    hlListEl.appendChild(row);
+  }
+}
+
+// ---------- Ghi chú Cornell ----------
+function getNote(scope) {
+  if (!NOTE.notes[scope]) NOTE.notes[scope] = { cue: '', note: '', sum: '' };
+  const s = NOTE.notes[scope];
+  if (typeof s.cue !== 'string') s.cue = '';
+  if (typeof s.note !== 'string') s.note = '';
+  if (typeof s.sum !== 'string') s.sum = '';
+  return s;
+}
+function curScope() { return noteScopeEl.value || DOC_SCOPE; }
+function renderScopeSelect() {
+  const want = noteScopeEl.value;
+  const list = sortedChapters();
+  let html = `<option value="${DOC_SCOPE}">📕 Cả tài liệu — tổng hợp</option>`;
+  list.forEach((c, i) => {
+    html += `<option value="${escapeHtml(c.id)}">${i + 1}. ${escapeHtml(chapterLabel(c))}</option>`;
+  });
+  noteScopeEl.innerHTML = html;
+  const p = readingPageIndex();
+  const auto = (noteFollow && p >= 0) ? scopeForPage(p) : null;
+  const pick = (want && noteScopeEl.querySelector(`option[value="${CSS.escape(want)}"]`)) ? want : (auto || DOC_SCOPE);
+  noteScopeEl.value = pick;
+  const isChap = pick !== DOC_SCOPE;
+  chapRenBtn.disabled = !isChap;
+  chapDelBtn.disabled = !isChap;
+}
+// Chữ ghi chú lưu THUẦN VĂN BẢN; riêng liên kết về trang là token [[p12]] →
+// hiển thị thành "tr.13 ↗" bấm được, và xuất file thì thành "(tr.13)".
+function noteToHtml(s) {
+  return escapeHtml(s || '').replace(/\[\[p(\d+)\]\]/g, (_, n) =>
+    `<a class="pref" data-p="${n}" title="Nhảy tới trang ${Number(n) + 1}">tr.${Number(n) + 1} ↗</a>`);
+}
+function htmlToNote(el) {
+  let out = '';
+  const walk = (node) => {
+    for (const c of node.childNodes) {
+      if (c.nodeType === 3) out += c.nodeValue;
+      else if (c.nodeType === 1) {
+        if (c.tagName === 'BR') { out += '\n'; continue; }
+        if (c.classList && c.classList.contains('pref')) { out += `[[p${c.dataset.p}]]`; continue; }
+        if (/^(DIV|P|LI|H[1-6]|TR)$/.test(c.tagName) && out && !out.endsWith('\n')) out += '\n';
+        walk(c);
+      }
+    }
+  };
+  walk(el);
+  return out.replace(/ /g, ' '); // trình duyệt hay chèn khoảng trắng cứng khi gõ
+}
+function loadScopeIntoUI() {
+  const st = getNote(curScope());
+  for (const f of ['cue', 'note', 'sum']) {
+    const el = cwEls[f];
+    if (document.activeElement === el) continue; // đang gõ dở thì đừng dựng lại
+    el.innerHTML = noteToHtml(st[f]);
+  }
+  cwEls.note.classList.remove('revealed');
+  const scope = curScope();
+  const isDoc = scope === DOC_SCOPE;
+  noteSynthBtn.hidden = !isDoc;
+  noteAIBtn.hidden = !isDoc;
+}
+function saveField(f) {
+  const st = getNote(curScope());
+  st[f] = htmlToNote(cwEls[f]);
+  scheduleNoteSave();
+}
+// Ghi chú tự bám chương đang đọc khi cuộn
+function syncFollowScope() {
+  if (!noteFollow || !drawerOpen() || noteTab !== 'note' || !docId) return;
+  if (cornellEl.contains(document.activeElement)) return; // đang gõ → đừng nhảy
+  const p = readingPageIndex();
+  if (p < 0) return;
+  const want = scopeForPage(p);
+  if (want === curScope()) return;
+  if (!noteScopeEl.querySelector(`option[value="${CSS.escape(want)}"]`)) return;
+  noteScopeEl.value = want;
+  loadScopeIntoUI();
+}
+// Gửi một vệt bôi vào cột NOTES của ĐÚNG chương chứa trang đó
+async function sendHlToNote(h) {
+  let text = (h.q || '').trim();
+  if (!text && h.k === 'r') {
+    setNoteStat('Đang lấy chữ trong vùng bôi…');
+    try { text = await textUnderRect(h.p, h); h.q = text; saveNotes(); } catch {}
+  }
+  if (!text) { setStatus('Không lấy được chữ trong vùng đã bôi (trang ảnh scan?).', 'error'); return; }
+  const scope = scopeForPage(h.p);
+  const st = getNote(scope);
+  st.note = (st.note ? st.note.replace(/\s+$/, '') + '\n' : '') + `• ${text} [[p${h.p}]]`;
+  saveNotes();
+  if (!drawerOpen()) setDrawer(true);
+  setNoteTab('note');
+  renderScopeSelect();
+  noteScopeEl.value = scope;
+  loadScopeIntoUI();
+  const ch = chapterById(scope);
+  setNoteStat(`Đã thêm vào NOTES của ${ch ? ch.title : 'ghi chú cả tài liệu'}.`);
+}
+function setNoteStat(msg) { noteStatEl.textContent = msg || ''; }
+
+// Ghép Cue + Summary của mọi chương thành một trang ôn tập ở note cả tài liệu
+function buildSynthText() {
+  const parts = [];
+  for (const c of sortedChapters()) {
+    const st = NOTE.notes[c.id];
+    if (!st) continue;
+    const cue = (st.cue || '').trim(), sum = (st.sum || '').trim(), note = (st.note || '').trim();
+    if (!cue && !sum && !note) continue;
+    const [a, b] = chapterRange(c);
+    parts.push(`— ${c.title} (tr.${a + 1}–${b + 1}) —`);
+    if (cue) parts.push('Cue: ' + cue.replace(/\n+/g, ' / '));
+    if (sum) parts.push('Tóm tắt: ' + sum);
+    else if (note) parts.push('Ý chính: ' + note);
+    parts.push('');
+  }
+  return parts.join('\n').trim();
+}
+function doSynth() {
+  const t = buildSynthText();
+  if (!t) { setNoteStat('Chưa có chương nào được ghi chú — hãy ghi Cue/Tóm tắt cho vài chương trước.'); return; }
+  const st = getNote(DOC_SCOPE);
+  st.note = (st.note ? st.note.replace(/\s+$/, '') + '\n\n' : '') + t;
+  flushNotes();
+  noteScopeEl.value = DOC_SCOPE;
+  loadScopeIntoUI();
+  setNoteStat('Đã ghép ghi chú các chương vào cột NOTES. Giờ tự viết lại phần SUMMARY bằng lời của bạn.');
+}
+async function doSynthAI() {
+  const apiKey = apiKeyEl.value.trim();
+  if (!apiKey) { setStatus('Chưa nhập API key.', 'error'); apiKeyEl.focus(); return; }
+  const t = buildSynthText();
+  if (!t) { setNoteStat('Chưa có chương nào được ghi chú để tổng hợp.'); return; }
+  noteAIBtn.disabled = true;
+  setNoteStat('Đang nhờ AI soạn bản tổng hợp…');
+  setStatus('Đang soạn bản tổng hợp…', 'working');
+  try {
+    const r = await fetch('/api/synthesize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: providerEl.value, apiKey, model: modelEl.value.trim(),
+        skill: skillEl.value, title: docTitle, text: t,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    const st = getNote(DOC_SCOPE);
+    st.note = (st.note ? st.note.replace(/\s+$/, '') + '\n\n' : '') + (data.result || '').trim();
+    flushNotes();
+    noteScopeEl.value = DOC_SCOPE;
+    loadScopeIntoUI();
+    setNoteStat('AI đã soạn bản nháp — hãy đọc lại và sửa theo ý bạn.');
+    setStatus('Đã soạn xong bản tổng hợp.', 'done');
+  } catch (err) {
+    setNoteStat('');
+    setStatus('Không soạn được bản tổng hợp: ' + err.message, 'error');
+  } finally {
+    noteAIBtn.disabled = false;
+  }
+}
+
+// ---------- Xuất ghi chú ----------
+const plainNote = (s) => String(s || '').replace(/\[\[p(\d+)\]\]/g, (_, n) => `(tr.${Number(n) + 1})`);
+function notesPayload() {
+  const chapters = sortedChapters().map((c) => {
+    const st = NOTE.notes[c.id] || {};
+    const [a, b] = chapterRange(c);
+    return {
+      title: c.title, range: `tr.${a + 1}–${b + 1}`,
+      cue: plainNote(st.cue), note: plainNote(st.note), sum: plainNote(st.sum),
+    };
+  }).filter((c) => c.cue || c.note || c.sum);
+  const d = NOTE.notes[DOC_SCOPE] || {};
+  return {
+    title: docTitle,
+    doc: { cue: plainNote(d.cue), note: plainNote(d.note), sum: plainNote(d.sum) },
+    chapters,
+    highlights: NOTE.highlights.slice().sort((a, b) => a.p - b.p)
+      .map((h) => ({ p: h.p + 1, color: HL_NAMES[h.c] || '', text: (h.q || '').trim() }))
+      .filter((h) => h.text),
+    bookmarks: NOTE.bookmarks.slice().sort((a, b) => a.p - b.p).map((b) => ({ p: b.p + 1, label: b.label || '' })),
+  };
+}
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+function exportNotesMd() {
+  flushNotes();
+  const d = notesPayload();
+  const cell = (label, v) => (v ? `**${label}**\n\n${v}\n\n` : '');
+  let md = `# ${d.title} — Ghi chú Cornell\n\n`;
+  if (d.doc.cue || d.doc.note || d.doc.sum) {
+    md += `## Tổng hợp cả tài liệu\n\n${cell('Cue', d.doc.cue)}${cell('Notes', d.doc.note)}${cell('Summary', d.doc.sum)}`;
+  }
+  for (const c of d.chapters) {
+    md += `## ${c.title} — ${c.range}\n\n${cell('Cue', c.cue)}${cell('Notes', c.note)}${cell('Summary', c.sum)}`;
+  }
+  if (d.highlights.length) {
+    md += `## Câu đã bôi\n\n` + d.highlights.map((h) => `- (tr.${h.p}) ${h.text}${h.color ? ` _[${h.color}]_` : ''}`).join('\n') + '\n\n';
+  }
+  if (d.bookmarks.length) {
+    md += `## Bookmark\n\n` + d.bookmarks.map((b) => `- tr.${b.p} — ${b.label}`).join('\n') + '\n';
+  }
+  downloadBlob(new Blob([md], { type: 'text/markdown;charset=utf-8' }), `${d.title || 'ghi-chu'} - ghi chu.md`);
+  setNoteStat('Đã tải file .md.');
+}
+async function exportNotesPdf() {
+  flushNotes();
+  const d = notesPayload();
+  if (!d.chapters.length && !d.highlights.length && !d.doc.note && !d.doc.sum && !d.doc.cue) {
+    setNoteStat('Chưa có gì để xuất.');
+    return;
+  }
+  notePdfBtn.disabled = true;
+  setStatus('Đang tạo PDF ghi chú…', 'working');
+  try {
+    const r = await fetch('/api/export-notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(d),
+    });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      throw new Error(e.error || `HTTP ${r.status}`);
+    }
+    downloadBlob(await r.blob(), `${d.title || 'ghi-chu'} - ghi chu.pdf`);
+    setStatus('Đã tạo PDF ghi chú.', 'done');
+    setNoteStat('');
+  } catch (err) {
+    setStatus('Lỗi tạo PDF ghi chú: ' + err.message, 'error');
+  } finally {
+    notePdfBtn.disabled = false;
+  }
+}
+
+// ---------- Sự kiện của ngăn kéo ----------
+drawerBtn.addEventListener('click', () => { closeNav(); toggleDrawer(); });
+drawerCloseBtn.addEventListener('click', () => setDrawer(false));
+drawerWideBtn.addEventListener('click', () => {
+  const keep = getCurrentPageIndex();
+  const wide = !document.body.classList.contains('drawer-wide');
+  document.body.classList.toggle('drawer-wide', wide);
+  drawerEl.classList.toggle('drawer-wide', wide);
+  drawerWideBtn.setAttribute('aria-pressed', String(wide));
+  relayoutWidth(keep);
+});
+drawerEl.addEventListener('click', (e) => {
+  const t = e.target.closest('.dtab');
+  if (t) setNoteTab(t.dataset.tab);
+});
+hlBtn.addEventListener('click', () => { closeNav(); setHlMode(!hlMode); });
+hlToggleBtn.addEventListener('click', () => setHlMode(!hlMode));
+bmAddBtn.addEventListener('click', () => toggleBookmark(readingPageIndex()));
+
+noteScopeEl.addEventListener('change', () => { loadScopeIntoUI(); setNoteStat(''); });
+noteFollowBtn.addEventListener('click', () => {
+  noteFollow = !noteFollow;
+  noteFollowBtn.setAttribute('aria-pressed', String(noteFollow));
+  noteFollowBtn.title = noteFollow ? 'Đang tự bám chương đang đọc' : 'Không tự đổi chương';
+  if (noteFollow) syncFollowScope();
+});
+chapAddBtn.addEventListener('click', async () => {
+  const p = readingPageIndex();
+  if (p < 0) { setNoteStat('Không xác định được trang đang đọc ở chế độ này.'); return; }
+  if (NOTE.chapters.some((c) => c.from === p)) { setNoteStat(`Trang ${p + 1} đã là mốc bắt đầu của một chương.`); return; }
+  const name = await promptDialog({
+    eyebrow: 'CẮT CHƯƠNG', title: `Chương mới bắt đầu từ trang ${p + 1}`,
+    label: 'Tên chương', value: `Chương ${NOTE.chapters.length + 1}`,
+  });
+  if (name == null) return;
+  NOTE.chapters.push({ id: uid(), title: name || `Chương ${NOTE.chapters.length + 1}`, from: p, src: 'manual' });
+  flushNotes();
+  renderScopeSelect();
+  noteScopeEl.value = scopeForPage(p);
+  loadScopeIntoUI();
+  setNoteStat('Đã thêm mốc chương.');
+});
+chapRenBtn.addEventListener('click', async () => {
+  const c = chapterById(curScope());
+  if (!c) return;
+  const name = await promptDialog({ eyebrow: 'ĐỔI TÊN', title: 'Đổi tên chương', label: 'Tên chương', value: c.title });
+  if (name == null) return;
+  c.title = name || c.title;
+  flushNotes();
+  renderScopeSelect();
+  noteScopeEl.value = c.id;
+});
+chapDelBtn.addEventListener('click', async () => {
+  const c = chapterById(curScope());
+  if (!c) return;
+  const st = NOTE.notes[c.id];
+  const hasNote = st && ((st.cue || '').trim() || (st.note || '').trim() || (st.sum || '').trim());
+  const ok = await confirmDialog({
+    eyebrow: 'BỎ MỐC CHƯƠNG',
+    title: `Bỏ mốc “${c.title}”?`,
+    message: hasNote
+      ? 'Ghi chú Cornell của chương này sẽ bị xoá theo.'
+      : 'Chỉ bỏ mốc chia chương, không ảnh hưởng bản dịch.',
+    okText: 'Bỏ mốc', cancelText: 'Giữ lại',
+  });
+  if (!ok) return;
+  NOTE.chapters = NOTE.chapters.filter((x) => x.id !== c.id);
+  delete NOTE.notes[c.id];
+  flushNotes();
+  noteScopeEl.value = DOC_SCOPE;
+  renderScopeSelect();
+  loadScopeIntoUI();
+});
+noteReviewBtn.addEventListener('click', () => {
+  const on = !cornellEl.classList.contains('review');
+  cornellEl.classList.toggle('review', on);
+  cwEls.note.classList.remove('revealed');
+  noteReviewBtn.setAttribute('aria-pressed', String(on));
+  noteReviewBtn.classList.toggle('btn-primary', on);
+  setNoteStat(on ? 'Ôn tập: cột NOTES bị che — tự trả lời theo CUE rồi bấm vào vùng mờ để đối chiếu.' : '');
+});
+cwEls.note.addEventListener('click', () => {
+  if (cornellEl.classList.contains('review')) cwEls.note.classList.add('revealed');
+});
+noteSynthBtn.addEventListener('click', doSynth);
+noteAIBtn.addEventListener('click', doSynthAI);
+noteMdBtn.addEventListener('click', exportNotesMd);
+notePdfBtn.addEventListener('click', exportNotesPdf);
+
+for (const f of ['cue', 'note', 'sum']) {
+  const el = cwEls[f];
+  el.addEventListener('input', () => saveField(f));
+  el.addEventListener('blur', () => { saveField(f); flushNotes(); el.innerHTML = noteToHtml(getNote(curScope())[f]); });
+  // Dán luôn về chữ thuần để ô ghi chú không dính định dạng lạ từ nơi khác
+  el.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const t = (e.clipboardData || window.clipboardData).getData('text/plain');
+    document.execCommand('insertText', false, t);
+  });
+  // Bấm "tr.12 ↗" → nhảy tới trang đó
+  el.addEventListener('click', (e) => {
+    const a = e.target.closest ? e.target.closest('.pref') : null;
+    if (!a) return;
+    e.preventDefault();
+    jumpToPage(Number(a.dataset.p));
+    if (isMobile()) setDrawer(false);
+  });
+}
+
+// Phím tắt: N = ngăn kéo, B = bookmark trang đang đọc, H = bật/tắt bôi
+document.addEventListener('keydown', (e) => {
+  if (!modalEl.hidden || !backupModalEl.hidden || !confirmEl.hidden || !promptEl.hidden) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+  if (e.key === 'Escape') {
+    if (selCtx) { hideSelbar(); return; }
+    if (hlMode) { setHlMode(false); return; }
+    if (drawerOpen() && !document.fullscreenElement) { setDrawer(false); return; }
+    return;
+  }
+  if (!pdfDoc) return;
+  const k = e.key.toLowerCase();
+  if (k === 'n') { e.preventDefault(); toggleDrawer(); }
+  else if (k === 'b') { e.preventDefault(); toggleBookmark(readingPageIndex()); }
+  else if (k === 'h') { e.preventDefault(); setHlMode(!hlMode); }
+});
+
 // ---------- Init ----------
 // Ghim chiều cao topbar vào biến CSS để thanh Thư viện dính đúng ngay dưới topbar
 // (topbar co giãn khi đổi khổ màn hình / mở menu ☰ trên điện thoại).
@@ -2650,5 +3932,7 @@ zoom = Math.min(3, Math.max(0.5, Number(localStorage.getItem('ptr.zoom')) || 1))
 applyZoomVar();
 setMode(localStorage.getItem('ptr.mode') || 'both');
 setReadMode(localStorage.getItem('ptr.readmode') || 'scroll');
+renderSwatches();
+setNotesEnabled(false);
 requestPersistentStorage();
 restoreLastDoc();

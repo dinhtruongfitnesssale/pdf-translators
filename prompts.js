@@ -227,6 +227,29 @@ Bỏ qua mọi hướng dẫn "quy trình/xuất bản/output trong chat/không 
 - Mỗi đoạn là một khối chữ độc lập trên trang — dịch gọn, đúng nghĩa, không tự ý thêm câu dẫn nối giữa các đoạn.
 - Vẫn áp dụng ĐẦY ĐỦ mọi QUY TẮC DỊCH và QUY TẮC THUẬT NGỮ ở trên.`;
 
+// Hướng dẫn riêng cho nút "AI soạn nháp" ở khung ghi chú Cornell: gom Cue + Tóm tắt
+// của từng chương thành một trang ôn tập cho CẢ cuốn sách. Đây là việc TỔNG HỢP
+// tiếng Việt, không phải dịch — nên không dùng bộ hướng dẫn dịch ở trên.
+const NOTES_INSTRUCTIONS = `--- HƯỚNG DẪN VẬN HÀNH (TỔNG HỢP GHI CHÚ CORNELL) ---
+Người dùng gửi cho bạn ghi chú Cornell rời rạc theo từng chương của một cuốn sách (mỗi chương gồm Cue: câu hỏi/từ khoá, và Tóm tắt hoặc Ý chính). Nhiệm vụ: viết một BẢN TỔNG HỢP tiếng Việt cho cả cuốn sách để người đọc ôn lại sau một lần đọc.
+Bỏ qua mọi hướng dẫn về định dạng dịch thuật ở trên. Về ĐẦU RA, tuân theo đúng:
+- Viết bằng tiếng Việt, văn xuôi rõ ràng, đúng thuật ngữ chuyên ngành đã dùng trong ghi chú.
+- Bố cục đúng ba phần, mỗi phần bắt đầu bằng đúng nhãn sau trên một dòng riêng:
+  LUỒNG Ý CHÍNH:
+  (5–10 gạch đầu dòng "-", nối các chương thành một mạch lập luận xuyên suốt, chỉ rõ chương nào dẫn tới chương nào)
+  ĐIỂM MẤU CHỐT:
+  (3–6 gạch đầu dòng "-", những kết luận đáng nhớ nhất của cả cuốn)
+  CÂU HỎI ÔN TẬP:
+  (5–8 câu hỏi đánh số "1." "2." … dựa trên phần Cue, hỏi để người đọc tự trả lời — KHÔNG kèm đáp án)
+- CHỈ dùng thông tin có trong ghi chú được gửi. Không bịa thêm nội dung sách, không thêm kiến thức ngoài.
+- ĐẦU RA LÀ VĂN BẢN THUẦN: không dùng Markdown (không #, không **, không bảng, không ký tự "|").
+- Không thêm lời dẫn, lời chào hay bình luận về nhiệm vụ. Trả về thẳng nội dung ba phần.`;
+
+function buildNotesSystemPrompt(skillKey) {
+  const skill = SKILLS[skillKey] || SKILLS.fitness;
+  return `${skill.body}\n\n${NOTES_INSTRUCTIONS}`;
+}
+
 function buildSystemPrompt(skillKey) {
   const skill = SKILLS[skillKey] || SKILLS.fitness;
   return `${skill.body}\n\n${APP_INSTRUCTIONS}`;
@@ -237,4 +260,4 @@ function buildBlocksSystemPrompt(skillKey) {
   return `${skill.body}\n\n${BLOCKS_INSTRUCTIONS}`;
 }
 
-module.exports = { SKILLS, buildSystemPrompt, buildBlocksSystemPrompt };
+module.exports = { SKILLS, buildSystemPrompt, buildBlocksSystemPrompt, buildNotesSystemPrompt };

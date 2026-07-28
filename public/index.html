@@ -89,6 +89,9 @@
 
       <button id="expandBtn" class="btn" type="button" title="Đọc toàn màn hình" disabled>⤢ Phóng</button>
 
+      <button id="hlBtn" class="btn" type="button" title="Bật/tắt bôi vàng bằng cách kéo vùng trên trang gốc (phím H)" aria-pressed="false" disabled>🖍 Bôi</button>
+      <button id="drawerBtn" class="btn" type="button" title="Bookmark · Highlight · Ghi chú Cornell (phím N)" aria-expanded="false" disabled>✎ Ghi chú</button>
+
       <div class="backup" role="group" aria-label="Sao lưu dữ liệu">
         <button id="backupBtn" class="btn" type="button" title="Xuất bản dịch + API key ra một file để phòng khi mất dữ liệu">⇩ Sao lưu</button>
         <button id="restoreBtn" class="btn" type="button" title="Nhập lại dữ liệu từ file sao lưu">⇧ Khôi phục</button>
@@ -145,6 +148,90 @@
       <button id="bookNext" class="book-arrow" type="button" aria-label="Trang sau">›</button>
     </div>
   </main>
+
+  <!-- Ngăn kéo bên phải: Bookmark · Highlight · Ghi chú Cornell -->
+  <aside id="drawer" class="drawer" hidden aria-label="Bookmark, highlight và ghi chú">
+    <div class="drawer-head">
+      <div class="drawer-tabs" role="tablist">
+        <button class="dtab active" type="button" data-tab="bm" role="tab">★<span>Bookmark</span></button>
+        <button class="dtab" type="button" data-tab="hl" role="tab">🖍<span>Highlight</span></button>
+        <button class="dtab" type="button" data-tab="note" role="tab">✎<span>Ghi chú</span></button>
+      </div>
+      <button id="drawerWide" class="dbtn" type="button" title="Mở rộng / thu gọn ngăn kéo">⤢</button>
+      <button id="drawerClose" class="dbtn" type="button" title="Đóng (Esc)">✕</button>
+    </div>
+
+    <div class="drawer-body">
+      <!-- Tab 1: Bookmark -->
+      <section id="paneBm" class="pane">
+        <div class="pane-act">
+          <button id="bmAdd" class="btn btn-sm btn-primary" type="button">★ Đánh dấu trang đang đọc</button>
+        </div>
+        <div id="bmList" class="list"></div>
+      </section>
+
+      <!-- Tab 2: Highlight -->
+      <section id="paneHl" class="pane" hidden>
+        <div class="pane-act">
+          <button id="hlToggle" class="btn btn-sm" type="button" aria-pressed="false">🖍 Bật bôi trên trang gốc</button>
+        </div>
+        <div class="hl-swatches" id="hlSwatches" role="group" aria-label="Màu bôi mặc định"></div>
+        <p class="pane-hint">Cột <b>bản dịch</b>: quét chọn chữ rồi chọn màu. Trang <b>gốc</b> / <b>đè trang</b>: bật nút trên rồi kéo một vùng. Vùng đã bôi hiện lại đúng ở mặt phẳng đã vẽ nó (trang đè giãn cao hơn trang gốc nên toạ độ khác nhau) — mọi vệt bôi vẫn nằm đủ trong danh sách dưới đây.</p>
+        <div id="hlList" class="list"></div>
+      </section>
+
+      <!-- Tab 3: Ghi chú Cornell -->
+      <section id="paneNote" class="pane" hidden>
+        <div class="note-scope">
+          <select id="noteScope" aria-label="Chọn phạm vi ghi chú"></select>
+          <button id="noteFollow" class="dbtn" type="button" title="Tự bám chương đang đọc" aria-pressed="true">🔗</button>
+        </div>
+        <div class="note-chapact">
+          <button id="chapAdd" class="lnk" type="button">＋ Cắt chương tại trang này</button>
+          <button id="chapRen" class="lnk" type="button">✎ Đổi tên</button>
+          <button id="chapDel" class="lnk lnk-del" type="button">✕ Bỏ mốc</button>
+        </div>
+        <div class="note-tools">
+          <button id="noteReview" class="btn btn-sm" type="button" aria-pressed="false">🙈 Ôn tập</button>
+          <button id="noteSynth" class="btn btn-sm" type="button">⟳ Tổng hợp</button>
+          <button id="noteAI" class="btn btn-sm" type="button">✨ AI soạn nháp</button>
+          <button id="noteMd" class="btn btn-sm" type="button">⇩ .md</button>
+          <button id="notePdf" class="btn btn-sm" type="button">⇩ PDF</button>
+        </div>
+        <p id="noteStat" class="pane-hint"></p>
+        <div class="cornell" id="cornell">
+          <div class="cell cell-cue">
+            <span class="clab">CUE — câu hỏi / từ khoá</span>
+            <div class="cw" id="cwCue" contenteditable="true" data-f="cue" data-ph="Câu hỏi gợi nhớ, từ khoá…"></div>
+          </div>
+          <div class="cell cell-note">
+            <span class="clab">NOTES — ý chính</span>
+            <div class="cw" id="cwNote" contenteditable="true" data-f="note" data-ph="Ý chính, trích dẫn, ví dụ…"></div>
+          </div>
+          <div class="cell cell-sum">
+            <span class="clab">SUMMARY — tóm tắt bằng lời của bạn</span>
+            <div class="cw" id="cwSum" contenteditable="true" data-f="sum" data-ph="Tóm tắt 3–5 câu…"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <!-- Thanh nổi chọn màu bôi / gửi vào ghi chú -->
+  <div id="selbar" class="selbar" hidden></div>
+
+  <!-- Modal nhập một dòng (đặt tên chương…) -->
+  <div id="promptModal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="promptTitle">
+      <span class="eyebrow" id="promptEyebrow">NHẬP</span>
+      <h2 id="promptTitle">Nhập nội dung</h2>
+      <label class="field"><span id="promptLabel">Nội dung</span><input id="promptInput" type="text" /></label>
+      <div class="modal-actions">
+        <button id="promptCancel" class="btn" type="button">Hủy</button>
+        <button id="promptOk" class="btn btn-primary" type="button">Xong</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Modal chọn phạm vi dịch -->
   <div id="modal" class="modal-overlay" hidden>

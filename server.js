@@ -5,7 +5,7 @@ const path = require('path');
 const express = require('express');
 const PDFDocument = require('pdfkit');
 const Anthropic = require('@anthropic-ai/sdk');
-const { SKILLS, buildSystemPrompt, buildBlocksSystemPrompt } = require('./prompts');
+const { SKILLS, buildSystemPrompt, buildBlocksSystemPrompt, buildNotesSystemPrompt } = require('./prompts');
 
 const app = express();
 const PORT = process.env.PORT || 5173;
@@ -98,6 +98,25 @@ app.post('/api/translate-blocks', async (req, res) => {
     res.json({ translations: out });
   } catch (err) {
     console.error('translate-blocks error:', err?.message || err);
+    res.status(err?.status === 400 ? 400 : 502).json({ error: normalizeError(err) });
+  }
+});
+
+// --- TỔNG HỢP GHI CHÚ CORNELL (nút "AI soạn nháp") ---
+// Gom Cue + Tóm tắt của từng chương thành một trang ôn tập cho cả cuốn sách.
+// Chỉ chạy khi người dùng bấm nút — không tự động gọi để khỏi tốn token.
+app.post('/api/synthesize', async (req, res) => {
+  try {
+    const { provider, apiKey, model, skill, title, text } = req.body || {};
+    if (!apiKey) return res.status(400).json({ error: 'Thiếu API key.' });
+    if (!text || !text.trim()) return res.status(400).json({ error: 'Chưa có ghi chú chương nào để tổng hợp.' });
+    const input = `Tên tài liệu: ${title || '(không rõ)'}\n\nGHI CHÚ THEO CHƯƠNG:\n${text}`;
+    const result = await runTranslate({
+      provider, apiKey, model, system: buildNotesSystemPrompt(skill), text: input,
+    });
+    res.json({ result: (result || '').trim() });
+  } catch (err) {
+    console.error('synthesize error:', err?.message || err);
     res.status(err?.status === 400 ? 400 : 502).json({ error: normalizeError(err) });
   }
 });
@@ -304,6 +323,127 @@ app.post('/api/export-overlay', (req, res) => {
     doc.end();
   } catch (err) {
     console.error('export-overlay error:', err?.message || err);
+    if (!res.headersSent) res.status(500).json({ error: 'Lỗi khi tạo PDF: ' + (err?.message || err) });
+  }
+});
+
+// --- XUẤT PDF GHI CHÚ CORNELL ---
+// Một tài liệu ôn tập riêng: tổng hợp cả sách + từng chương (Cue | Notes | Summary),
+// kèm danh sách câu đã bôi và bookmark.
+app.post('/api/export-notes', (req, res) => {
+  try {
+    const { title, doc: docNote, chapters, highlights, bookmarks } = req.body || {};
+    const chaps = Array.isArray(chapters) ? chapters : [];
+    const hls = Array.isArray(highlights) ? highlights : [];
+    const bms = Array.isArray(bookmarks) ? bookmarks : [];
+    const d0 = docNote || {};
+    const hasDoc = !!(d0.cue || d0.note || d0.sum);
+    if (!hasDoc && !chaps.length && !hls.length && !bms.length) {
+      return res.status(400).json({ error: 'Không có ghi chú để xuất.' });
+    }
+
+    const doc = new PDFDocument({ size: 'A4', margin: 56, bufferPages: true });
+    const fontReg = path.join(__dirname, 'fonts', 'BeVietnamPro-Regular.ttf');
+    const fontBold = path.join(__dirname, 'fonts', 'BeVietnamPro-SemiBold.ttf');
+    doc.registerFont('VN', fontReg);
+    try { doc.registerFont('VN-Bold', fontBold); } catch { doc.registerFont('VN-Bold', fontReg); }
+
+    const safeTitle = (title || 'ghi-chu').replace(/[^\p{L}\p{N}\-_ ]/gu, '').trim() || 'ghi-chu';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeTitle)}.pdf"`);
+    doc.pipe(res);
+
+    const paintPaper = () => {
+      doc.save();
+      doc.rect(0, 0, doc.page.width, doc.page.height).fill(BRAND.paper);
+      doc.restore();
+    };
+    doc.on('pageAdded', paintPaper);
+    paintPaper();
+
+    const cw = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const room = (need) => {
+      if (doc.y + need > doc.page.height - doc.page.margins.bottom) doc.addPage();
+    };
+
+    doc.font('VN-Bold').fontSize(20).fillColor(BRAND.ink)
+      .text(`${title || 'Ghi chú'} — Ghi chú Cornell`, { width: cw });
+    doc.moveDown(0.3);
+    doc.save().strokeColor(BRAND.amber).lineWidth(1.5)
+      .moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + 48, doc.y).stroke().restore();
+    doc.moveDown(1);
+
+    const heading = (text, sub) => {
+      room(70);
+      doc.font('VN-Bold').fontSize(14).fillColor(BRAND.ink).text(text, { width: cw });
+      if (sub) doc.font('VN').fontSize(9).fillColor(BRAND.slate).text(sub, { width: cw });
+      doc.moveDown(0.4);
+    };
+    // Một ô Cornell: nhãn nhỏ màu amber + nội dung
+    const cell = (label, value) => {
+      const t = (value || '').trim();
+      if (!t) return;
+      room(46);
+      doc.font('VN-Bold').fontSize(8).fillColor(BRAND.amber)
+        .text(label.toUpperCase(), { width: cw, characterSpacing: 1 });
+      doc.moveDown(0.15);
+      doc.font('VN').fontSize(11).fillColor(BRAND.ink).text(t, { width: cw, lineGap: 2.5 });
+      doc.moveDown(0.5);
+    };
+    const rule = () => {
+      doc.moveDown(0.2);
+      doc.save().strokeColor(BRAND.amber).lineWidth(0.6)
+        .moveTo(doc.page.margins.left, doc.y).lineTo(doc.page.margins.left + cw, doc.y).stroke().restore();
+      doc.moveDown(0.6);
+    };
+
+    if (hasDoc) {
+      heading('Tổng hợp cả tài liệu');
+      cell('Cue', d0.cue);
+      cell('Notes', d0.note);
+      cell('Summary', d0.sum);
+      if (chaps.length) rule();
+    }
+    chaps.forEach((c, i) => {
+      if (i > 0) rule();
+      heading(c.title || `Chương ${i + 1}`, c.range || '');
+      cell('Cue', c.cue);
+      cell('Notes', c.note);
+      cell('Summary', c.sum);
+    });
+
+    if (hls.length) {
+      rule();
+      heading('Câu đã bôi', `${hls.length} đoạn`);
+      hls.forEach((h) => {
+        room(34);
+        doc.font('VN').fontSize(8).fillColor(BRAND.slate)
+          .text(`TR.${h.p}${h.color ? ' · ' + h.color : ''}`, { width: cw, characterSpacing: 0.6 });
+        doc.font('VN').fontSize(11).fillColor(BRAND.ink).text(h.text || '', { width: cw, lineGap: 2 });
+        doc.moveDown(0.35);
+      });
+    }
+    if (bms.length) {
+      rule();
+      heading('Bookmark', `${bms.length} trang`);
+      bms.forEach((b) => {
+        room(22);
+        doc.font('VN').fontSize(11).fillColor(BRAND.ink)
+          .text(`tr.${b.p} — ${b.label || ''}`, { width: cw, lineGap: 2 });
+      });
+    }
+
+    const range = doc.bufferedPageRange();
+    for (let p = range.start; p < range.start + range.count; p++) {
+      doc.switchToPage(p);
+      doc.font('VN').fontSize(8).fillColor(BRAND.slate)
+        .text(`${p + 1}`, doc.page.margins.left,
+          doc.page.height - doc.page.margins.bottom + 16,
+          { width: cw, align: 'center' });
+    }
+    doc.end();
+  } catch (err) {
+    console.error('export-notes error:', err?.message || err);
     if (!res.headersSent) res.status(500).json({ error: 'Lỗi khi tạo PDF: ' + (err?.message || err) });
   }
 });
