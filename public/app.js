@@ -1,5 +1,6 @@
+import '/vendor/pdfjs/compat.mjs';
 import * as pdfjsLib from '/vendor/pdfjs/pdf.mjs';
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.entry.mjs';
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
