@@ -690,11 +690,16 @@ body.drawer-open.drawer-wide { --drawer-w: min(62vw, 900px); }
 .drawer-tabs { display: flex; gap: 4px; margin-right: auto; min-width: 0; }
 .dtab {
   display: inline-flex; align-items: center; gap: 5px;
-  font-family: var(--sans); font-size: 12.5px; font-weight: 600;
+  font-family: var(--sans); font-size: 15px; font-weight: 600;
   color: var(--slate); background: transparent;
   border: 1px solid transparent; border-radius: 7px;
-  padding: 6px 9px; cursor: pointer; white-space: nowrap;
+  padding: 6px 10px; cursor: pointer; white-space: nowrap;
 }
+/* Ngăn kéo hẹp: chỉ chừa biểu tượng. Kèm chữ thì hàng tab tràn ra, đè lên hai
+   nút ⤢ và ✕ ở góc phải. Tên hạng mục hiện lại khi bấm ⤢ mở rộng. */
+.dtab span { display: none; }
+.drawer-wide .dtab { font-size: 12.5px; padding: 6px 9px; }
+.drawer-wide .dtab span { display: inline; }
 .dtab:hover { color: var(--ink); background: rgba(20, 17, 14, 0.05); }
 .dtab.active { color: var(--ink); border-color: var(--ink); }
 .dbtn {
@@ -817,8 +822,7 @@ body.drawer-open.drawer-wide { --drawer-w: min(62vw, 900px); }
     box-shadow: 0 -8px 26px rgba(20, 17, 14, 0.16);
   }
   body.drawer-wide .drawer { height: 88vh; }
-  .dtab span { display: none; }          /* chỉ còn biểu tượng cho gọn */
-  .dtab { font-size: 15px; padding: 7px 12px; }
+  .dtab { padding: 7px 12px; }           /* nới ra cho dễ chạm bằng ngón tay */
   .drawer-wide .cornell { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
   .drawer-wide .cell-cue, .drawer-wide .cell-note, .drawer-wide .cell-sum { grid-column: 1; grid-row: auto; }
 }
