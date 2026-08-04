@@ -89,6 +89,7 @@
 
       <button id="expandBtn" class="btn" type="button" title="Đọc toàn màn hình" disabled>⤢ Phóng</button>
 
+      <button id="findBtn" class="btn" type="button" title="Tìm chữ trong bản gốc &amp; bản dịch (Ctrl+F hoặc phím F)" disabled>🔎 Tìm chữ</button>
       <button id="hlBtn" class="btn" type="button" title="Bật/tắt bôi vàng bằng cách kéo vùng trên trang gốc (phím H)" aria-pressed="false" disabled>🖍 Bôi</button>
       <button id="drawerBtn" class="btn" type="button" title="Bookmark · Highlight · Ghi chú Cornell (phím N)" aria-expanded="false" disabled>✎ Ghi chú</button>
 
@@ -150,9 +151,10 @@
   </main>
 
   <!-- Ngăn kéo bên phải: Bookmark · Highlight · Ghi chú Cornell -->
-  <aside id="drawer" class="drawer" hidden aria-label="Bookmark, highlight và ghi chú">
+  <aside id="drawer" class="drawer" hidden aria-label="Tìm chữ, bookmark, highlight và ghi chú">
     <div class="drawer-head">
       <div class="drawer-tabs" role="tablist">
+        <button class="dtab" type="button" data-tab="find" role="tab" title="Tìm chữ" aria-label="Tìm chữ">🔎<span>Tìm</span></button>
         <button class="dtab active" type="button" data-tab="bm" role="tab" title="Bookmark" aria-label="Bookmark">★<span>Bookmark</span></button>
         <button class="dtab" type="button" data-tab="hl" role="tab" title="Highlight" aria-label="Highlight">🖍<span>Highlight</span></button>
         <button class="dtab" type="button" data-tab="note" role="tab" title="Ghi chú" aria-label="Ghi chú">✎<span>Ghi chú</span></button>
@@ -162,6 +164,22 @@
     </div>
 
     <div class="drawer-body">
+      <!-- Tab 0: Tìm chữ -->
+      <section id="paneFind" class="pane" hidden>
+        <div class="find-bar">
+          <input id="findInput" type="text" placeholder="Gõ chữ cần tìm…" autocomplete="off" spellcheck="false" aria-label="Từ khoá cần tìm" />
+          <button id="findPrev" class="dbtn" type="button" title="Kết quả trước (Shift+Enter)" aria-label="Kết quả trước">‹</button>
+          <button id="findNext" class="dbtn" type="button" title="Kết quả sau (Enter)" aria-label="Kết quả sau">›</button>
+        </div>
+        <div class="viewmode find-scope" id="findScope" role="group" aria-label="Phạm vi tìm">
+          <button class="seg active" data-fs="both" type="button">Cả hai</button>
+          <button class="seg" data-fs="trans" type="button">Bản dịch</button>
+          <button class="seg" data-fs="orig" type="button">Bản gốc</button>
+        </div>
+        <p id="findStat" class="pane-hint"></p>
+        <div id="findList" class="list"></div>
+      </section>
+
       <!-- Tab 1: Bookmark -->
       <section id="paneBm" class="pane">
         <div class="pane-act">

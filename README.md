@@ -11,6 +11,10 @@ Web-app: mở PDF tiếng Anh, xem **bản gốc** và **bản dịch tiếng Vi
 - Sửa/xóa chữ bản dịch, tự lưu; nhớ tài liệu + vị trí đọc khi refresh.
 - Chế độ **Đọc sách**: 2 trang/màn hình, lật trang (click/phím ← →) có hiệu ứng giở trang, phóng to, toàn màn hình. Áp dụng cho cả bản gốc và bản dịch (bản dịch tự dàn sang trang mới khi dài).
 - Xuất PDF bản dịch (font **Be Vietnam Pro**, đủ dấu tiếng Việt).
+- **Tìm chữ** trong cả cuốn (nút 🔎 Tìm chữ, phím `F` hoặc `Ctrl+F`): tìm cùng lúc ở **bản gốc** và **bản dịch**,
+  **không cần gõ dấu** (gõ `tieng viet` vẫn ra “tiếng Việt”), tìm được cả từ bị ngắt qua hai dòng.
+  Danh sách kết quả kèm số trang + đoạn trích; Enter / Shift+Enter (hoặc `F3`) nhảy tới kết quả sau / trước,
+  chỗ tìm thấy được tô vàng ngay trên trang gốc lẫn cột bản dịch.
 - **Bookmark** theo trang (nút ☆ trên mỗi trang hoặc phím `B`), đặt tên được, bấm để nhảy tới.
 - **Highlight 4 màu** (vàng = quan trọng, xanh = định nghĩa, hồng = chưa hiểu, lá = ví dụ):
   quét chọn chữ ở cột bản dịch, hoặc bật chế độ bôi (phím `H`) rồi kéo một vùng trên trang gốc / trang đè.
@@ -54,3 +58,5 @@ Hoặc bằng CLI: `npm i -g vercel` rồi `vercel` trong thư mục dự án.
   Highlight ở cột bản dịch lưu theo **vị trí ký tự** kèm đoạn chữ gốc để tự neo lại khi bạn sửa bản dịch —
   bản dịch vẫn là văn bản thuần như trước, không nhét thẻ HTML vào.
   Vùng bôi trên trang lưu theo **tỉ lệ bề rộng trang** nên đúng chỗ ở mọi mức zoom.
+- Tìm chữ không lưu gì cả: bản dịch có sẵn trong bộ nhớ nên ra kết quả tức thì, còn bản gốc được trích chữ
+  dần theo trang (có báo tiến độ) rồi nhớ đệm lại cho những lần tìm sau trong cùng phiên.

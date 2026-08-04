@@ -227,7 +227,9 @@ body {
   .check { padding-bottom: 0; }
   .actions { gap: 8px; }
   .actions .btn { flex: 1 1 auto; padding: 10px 12px; text-align: center; }
-  .viewmode, .zoom, .pagenav { flex: 1 1 auto; justify-content: center; }
+  /* Chỉ giãn mấy cụm nút NẰM TRÊN THANH CÔNG CỤ. Không khoá vào .actions thì
+     cụm chọn phạm vi tìm (trong ngăn kéo, xếp dọc) cũng bị kéo cao hết cỡ. */
+  .actions .viewmode, .actions .zoom, .actions .pagenav { flex: 1 1 auto; justify-content: center; }
   .actions #status { flex: 1 1 100%; }
 
   /* Cảm ứng không có hover → luôn hiện thanh điều khiển khối */
@@ -751,6 +753,34 @@ body.drawer-open.drawer-wide { --drawer-w: min(62vw, 900px); }
 }
 .hl-swatches .sw i { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(20,17,14,.25); }
 .hl-swatches .sw.on { border-color: var(--ink); color: var(--ink); }
+
+/* ---------- Tìm chữ ---------- */
+.find-bar { display: flex; gap: 6px; align-items: center; }
+.find-bar input {
+  flex: 1; min-width: 0;
+  font-family: var(--sans); font-size: 14px; color: var(--ink);
+  background: #fff9; border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; outline: none;
+}
+.find-bar input:focus { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(181, 101, 30, 0.12); }
+.find-bar .dbtn { font-size: 16px; line-height: 1; padding: 6px 10px; }
+.find-scope { align-self: flex-start; flex: 0 0 auto; }
+.find-scope .seg { padding: 6px 11px; font-size: 12.5px; }
+/* Kết quả đang xem trong danh sách */
+.item.cur { border-color: var(--amber); background: rgba(181, 101, 30, 0.09); }
+.item-t b { background: var(--hl-y); font-weight: 700; border-radius: 2px; }
+/* Vệt tìm thấy trên trang gốc (nằm trên lớp bôi vàng, không chắn chuột) */
+.find-layer { position: absolute; inset: 0; pointer-events: none; }
+.find-box {
+  position: absolute; border-radius: 2px;
+  background: rgba(255, 224, 138, 0.72); mix-blend-mode: multiply;
+  outline: 1px solid rgba(181, 101, 30, 0.35);
+}
+.find-box.cur { background: rgba(242, 160, 61, 0.9); outline: 1.5px solid var(--amber); }
+/* Vệt tìm thấy trong cột bản dịch (và trong trang sách) */
+.editor mark.findmark[data-fi] { background: var(--hl-y); box-shadow: inset 0 -2px 0 rgba(181, 101, 30, 0.5); }
+.editor mark.findmark.find-cur[data-fi] { background: #F2A03D; }
+.book-frag-text mark.findmark { background: var(--hl-y); border-radius: 2px; padding: 0 1px; }
 
 /* ---------- Khung Cornell ---------- */
 .note-scope { display: flex; gap: 6px; align-items: center; }
