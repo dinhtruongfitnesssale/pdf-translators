@@ -4551,6 +4551,7 @@ const pomoMinBtn = $('pomoMin');
 const pomoCloseBtn = $('pomoClose');
 const pomoDotsEl = $('pomoDots');
 const pomoStatEl = $('pomoStat');
+const pomoPosBtn = $('pomoPos');
 const pomoCfgEls = {
   focus: $('pomoCfgFocus'),
   short: $('pomoCfgShort'),
@@ -4579,6 +4580,7 @@ let POMO = {
   day: '',
   open: false,
   mini: false,
+  pos: null,                 // {x, y} khi người đọc tự kéo đồng hồ đi chỗ khác
   cfg: { ...POMO_DEF },
 };
 let pomoTimer = null;
@@ -4621,10 +4623,76 @@ function setPomoOpen(v, { silent = false } = {}) {
   POMO.open = !!v;
   pomoEl.hidden = !POMO.open;
   if (pomoBtn) pomoBtn.setAttribute('aria-expanded', String(POMO.open));
-  if (POMO.open) { pomoReparent(); pomoRender(); }
+  if (POMO.open) { pomoReparent(); pomoApplyPos(); pomoRender(); }
   else document.title = PAGE_TITLE;
   if (!silent) pomoSave();
 }
+
+// --- Kéo đồng hồ tới chỗ mình thích ---
+// Vị trí lưu theo toạ độ góc trái-trên và luôn được kẹp lại trong màn hình, để
+// đổi cỡ cửa sổ hay xoay ngang điện thoại thì đồng hồ không lạc ra ngoài.
+function pomoApplyPos() {
+  if (!POMO.pos) {
+    pomoEl.style.left = '';
+    pomoEl.style.top = '';
+    pomoEl.style.bottom = '';
+    return;
+  }
+  const r = pomoEl.getBoundingClientRect();
+  const w = r.width || 222;
+  const h = r.height || 240;
+  const m = 8;
+  const x = Math.max(m, Math.min(Math.max(m, window.innerWidth - w - m), POMO.pos.x));
+  const y = Math.max(m, Math.min(Math.max(m, window.innerHeight - h - m), POMO.pos.y));
+  POMO.pos = { x, y };
+  pomoEl.style.left = x + 'px';
+  pomoEl.style.top = y + 'px';
+  pomoEl.style.bottom = 'auto';
+}
+// Thả gần mép thì cho dính hẳn vào mép cho gọn
+function pomoSnapPos() {
+  if (!POMO.pos) return;
+  const r = pomoEl.getBoundingClientRect();
+  const m = 18;
+  const near = 30;
+  if (POMO.pos.x < near) POMO.pos.x = m;
+  else if (window.innerWidth - (POMO.pos.x + r.width) < near) POMO.pos.x = window.innerWidth - r.width - m;
+  if (POMO.pos.y < near) POMO.pos.y = m;
+  else if (window.innerHeight - (POMO.pos.y + r.height) < near) POMO.pos.y = window.innerHeight - r.height - m;
+  pomoApplyPos();
+}
+function pomoResetPos() {
+  POMO.pos = null;
+  pomoApplyPos();
+  pomoSave();
+}
+
+let pomoDrag = null;
+pomoEl.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  if (e.target.closest('button, input, select, textarea, summary, a, label')) return; // chừa mấy nút bấm ra
+  const r = pomoEl.getBoundingClientRect();
+  pomoDrag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, moved: false };
+  try { pomoEl.setPointerCapture(e.pointerId); } catch {}
+  pomoEl.classList.add('dragging');
+});
+pomoEl.addEventListener('pointermove', (e) => {
+  if (!pomoDrag || e.pointerId !== pomoDrag.id) return;
+  e.preventDefault();
+  pomoDrag.moved = true;
+  POMO.pos = { x: e.clientX - pomoDrag.dx, y: e.clientY - pomoDrag.dy };
+  pomoApplyPos();
+});
+function pomoEndDrag(e) {
+  if (!pomoDrag || e.pointerId !== pomoDrag.id) return;
+  try { pomoEl.releasePointerCapture(e.pointerId); } catch {}
+  pomoEl.classList.remove('dragging');
+  if (pomoDrag.moved) { pomoSnapPos(); pomoSave(); }
+  pomoDrag = null;
+}
+pomoEl.addEventListener('pointerup', pomoEndDrag);
+pomoEl.addEventListener('pointercancel', pomoEndDrag);
+window.addEventListener('resize', () => { if (POMO.open) pomoApplyPos(); });
 // Đọc toàn màn hình dùng phần tử #book, nên đồng hồ phải chui vào đó mới hiện được.
 function pomoReparent() {
   const host = document.fullscreenElement || document.body;
@@ -4794,8 +4862,10 @@ pomoMinBtn.addEventListener('click', () => {
   pomoEl.classList.toggle('mini', POMO.mini);
   pomoMinBtn.textContent = POMO.mini ? '⤢' : '–';
   pomoMinBtn.title = POMO.mini ? 'Mở rộng' : 'Thu gọn';
+  pomoApplyPos(); // đổi cỡ thẻ thì kẹp lại cho khỏi lòi ra ngoài màn hình
   pomoSave();
 });
+pomoPosBtn.addEventListener('click', pomoResetPos);
 pomoStartBtn.addEventListener('click', () => {
   if (POMO.running) pomoPause();
   else { pomoAskNotify(); pomoStart(); }

@@ -927,6 +927,21 @@ body.drawer-open.drawer-wide { --drawer-w: min(62vw, 900px); }
 .pomo-row.check-row span { margin-right: 0; }
 .pomo-row input[type="checkbox"] { margin: 0; }
 
+.pomo-drag-hint {
+  margin: 2px 0 6px; font-size: 11px; line-height: 1.35;
+  color: rgba(20, 17, 14, 0.55);
+}
+
+/* Kéo thẻ đi chỗ khác: bấm vào chỗ trống trên thẻ rồi rê */
+.pomo { cursor: grab; touch-action: none; }
+.pomo button, .pomo input, .pomo summary, .pomo label { cursor: pointer; touch-action: auto; }
+.pomo input[type="number"] { cursor: text; }
+.pomo.dragging {
+  cursor: grabbing;
+  user-select: none; -webkit-user-select: none;
+  box-shadow: 0 14px 34px rgba(20, 17, 14, 0.26);
+}
+
 /* Thu gọn: chỉ còn viên thuốc hiện giờ còn lại */
 .pomo.mini { width: auto; padding: 6px 9px; flex-direction: row; align-items: center; gap: 8px; }
 .pomo.mini .pomo-dial { width: auto; height: auto; }
