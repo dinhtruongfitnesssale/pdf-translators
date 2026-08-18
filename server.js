@@ -23,6 +23,23 @@ const BRAND = {
   slate: '#3A5567',
 };
 
+// --- Model Gemini ---
+// Google gỡ model cũ theo lịch: 2.0-flash đã tắt (01/06/2026), 2.5-* sẽ nghỉ hưu tiếp.
+// Bảng dưới quy đổi tên đã chết sang tên còn sống, để cài đặt cũ của người dùng vẫn chạy.
+const GEMINI_DEFAULT_MODEL = 'gemini-3.7-flash';
+const GEMINI_RETIRED = {
+  'gemini-2.0-flash': 'gemini-3.6-flash',
+  'gemini-2.0-flash-001': 'gemini-3.6-flash',
+  'gemini-2.0-flash-lite': 'gemini-3.5-flash-lite',
+  'gemini-1.5-flash': 'gemini-3.5-flash-lite',
+  'gemini-1.5-flash-8b': 'gemini-3.5-flash-lite',
+  'gemini-1.5-pro': 'gemini-3.7-flash',
+};
+function resolveGeminiModel(m) {
+  const name = String(m || '').trim().replace(/^models\//, '') || GEMINI_DEFAULT_MODEL;
+  return GEMINI_RETIRED[name] || name;
+}
+
 // Danh sách hồ sơ dịch cho dropdown
 app.get('/api/config', (req, res) => {
   res.json({
@@ -136,7 +153,21 @@ async function translateClaude({ apiKey, model, system, text }) {
 }
 
 async function translateGemini({ apiKey, model, system, text }) {
-  const m = model || 'gemini-2.5-flash';
+  const m = resolveGeminiModel(model);
+  try {
+    return await callGemini({ apiKey, model: m, system, text });
+  } catch (e) {
+    // Model bị Google gỡ giữa chừng: thử lại một lần bằng model mặc định còn sống.
+    if (e?.status === 404 && m !== GEMINI_DEFAULT_MODEL) {
+      const out = await callGemini({ apiKey, model: GEMINI_DEFAULT_MODEL, system, text });
+      console.warn(`[gemini] "${m}" không còn khả dụng — đã dịch bằng "${GEMINI_DEFAULT_MODEL}".`);
+      return out;
+    }
+    throw e;
+  }
+}
+
+async function callGemini({ apiKey, model: m, system, text }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const body = {
     system_instruction: { parts: [{ text: system }] },
@@ -174,8 +205,36 @@ function normalizeError(err) {
   if (s === 429 || /rate limit|quota|RESOURCE_EXHAUSTED/i.test(msg)) {
     return 'Vượt giới hạn lượt gọi (rate limit / quota). Đợi một chút rồi thử lại.';
   }
+  if (s === 404 || /not found|not supported|NOT_FOUND|is not found for API version/i.test(msg)) {
+    return 'Model này không còn khả dụng (Google đã gỡ). Mở Cài đặt và chọn model mới, ví dụ "' + GEMINI_DEFAULT_MODEL + '".';
+  }
   return msg;
 }
+
+// --- DANH SÁCH MODEL (hỏi thẳng Google bằng key của người dùng) ---
+app.post('/api/models', async (req, res) => {
+  try {
+    const { provider, apiKey } = req.body || {};
+    if (!apiKey) return res.status(400).json({ error: 'Thiếu API key.' });
+    if (provider !== 'gemini') return res.json({ models: [] });
+    const r = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + encodeURIComponent(apiKey)
+    );
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const e = new Error(data?.error?.message || `HTTP ${r.status}`);
+      e.status = r.status;
+      throw e;
+    }
+    const models = (data.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+      .map((m) => String(m.name || '').replace(/^models\//, ''))
+      .filter((n) => n && !/embedding|aqa|imagen|veo|tts|image|audio|native-audio|live/i.test(n));
+    res.json({ models, default: GEMINI_DEFAULT_MODEL });
+  } catch (err) {
+    res.status(err?.status === 400 ? 400 : 500).json({ error: normalizeError(err) });
+  }
+});
 
 // --- XUẤT PDF ---
 app.post('/api/export', (req, res) => {

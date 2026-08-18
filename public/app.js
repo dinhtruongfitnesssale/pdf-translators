@@ -193,7 +193,7 @@ if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 
 // ---------- State ----------
 const MODEL_SUGGEST = {
-  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+  gemini: ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-pro'],
   claude: ['claude-opus-4-8', 'claude-haiku-4-5', 'claude-sonnet-5'],
 };
 let docId = null;
@@ -232,11 +232,50 @@ function saveSettings() {
   };
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
 }
+// Model đã bị gỡ -> tên thay thế, để cài đặt cũ lưu trong máy không làm hỏng bản dịch.
+const RETIRED_MODELS = {
+  'gemini-2.0-flash': 'gemini-3.6-flash',
+  'gemini-2.0-flash-001': 'gemini-3.6-flash',
+  'gemini-2.0-flash-lite': 'gemini-3.5-flash-lite',
+  'gemini-1.5-flash': 'gemini-3.5-flash-lite',
+  'gemini-1.5-flash-8b': 'gemini-3.5-flash-lite',
+  'gemini-1.5-pro': 'gemini-3.7-flash',
+};
+const migrateModel = (m) => RETIRED_MODELS[String(m || '').trim()] || m;
+
 function applyModelSuggest(preferred) {
   const list = MODEL_SUGGEST[providerEl.value] || [];
+  const want = migrateModel(preferred);
   modelList.innerHTML = list.map((m) => `<option value="${m}"></option>`).join('');
-  if (preferred && (list.includes(preferred) || preferred.length)) modelEl.value = preferred;
+  if (want && (list.includes(want) || want.length)) modelEl.value = want;
   else modelEl.value = list[0] || '';
+}
+
+// Hỏi thẳng Google xem key này còn dùng được model nào, rồi thay danh sách gợi ý.
+// Nhờ vậy mỗi lần Google đổi đời model, người dùng không phải chờ cập nhật ứng dụng.
+let modelFetchKey = '';
+async function refreshModelList() {
+  const apiKey = apiKeyEl.value.trim();
+  if (providerEl.value !== 'gemini' || !apiKey || apiKey === modelFetchKey) return;
+  modelFetchKey = apiKey;
+  try {
+    const r = await fetch('/api/models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'gemini', apiKey }),
+    });
+    const data = await r.json();
+    if (!r.ok || !Array.isArray(data.models) || !data.models.length) return;
+    MODEL_SUGGEST.gemini = data.models;
+    const cur = modelEl.value.trim();
+    modelList.innerHTML = data.models.map((m) => `<option value="${m}"></option>`).join('');
+    if (!cur || !data.models.includes(cur)) {
+      modelEl.value = data.models.includes(data.default) ? data.default : data.models[0];
+      saveSettings();
+    }
+  } catch {
+    modelFetchKey = ''; // mạng lỗi thì cho thử lại lần sau
+  }
 }
 
 // ---------- Translations persistence (per document) ----------
@@ -2240,10 +2279,12 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeRangeModal();
   else if (e.key === 'Enter') confirmRange();
 });
-providerEl.addEventListener('change', () => { applyModelSuggest(); saveSettings(); });
+providerEl.addEventListener('change', () => { applyModelSuggest(); saveSettings(); refreshModelList(); });
 [apiKeyEl, modelEl, skillEl, rememberEl].forEach((el) =>
   el.addEventListener('change', saveSettings));
 apiKeyEl.addEventListener('input', updateKeyHint);
+apiKeyEl.addEventListener('change', refreshModelList);
+refreshModelList(); // key đã nhớ sẵn thì cập nhật danh sách ngay khi mở
 // Ẩn / hiện API key
 if (toggleKeyEl) toggleKeyEl.addEventListener('click', () => {
   const show = apiKeyEl.type === 'password';
