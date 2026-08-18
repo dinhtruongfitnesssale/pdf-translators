@@ -25,6 +25,10 @@ Web-app: mở PDF tiếng Anh, xem **bản gốc** và **bản dịch tiếng Vi
   - **Ôn tập**: che cột Notes, chỉ chừa Cue để tự trả lời rồi bấm mở ra đối chiếu.
   - **Tổng hợp** cuối sách: ghép Cue + Tóm tắt mọi chương (thủ công), hoặc **AI soạn nháp** (chỉ chạy khi bấm nút).
   - Xuất ghi chú ra **.md** hoặc **PDF** riêng; vùng bôi được in kèm khi xuất PDF “Đè trang”.
+- **Đồng hồ Pomodoro** (nút 🍅 hoặc phím `P`): đọc 25 phút → nghỉ 5 phút, xong 4 phiên thì nghỉ dài 15 phút.
+  Tự đổi phiên, có chuông báo + thông báo trình duyệt, đếm số phiên đã đọc trong ngày, chỉnh được thời lượng.
+  Đếm theo mốc thời gian thật nên tab bị ru ngủ hay đóng app giữa chừng vẫn tính đúng giờ; thu gọn còn một viên
+  thuốc nhỏ, và theo được cả vào chế độ đọc toàn màn hình.
 
 ## Chạy tại máy (local)
 

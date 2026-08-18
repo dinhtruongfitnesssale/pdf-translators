@@ -856,3 +856,96 @@ body.drawer-open.drawer-wide { --drawer-w: min(62vw, 900px); }
   .drawer-wide .cornell { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
   .drawer-wide .cell-cue, .drawer-wide .cell-note, .drawer-wide .cell-sum { grid-column: 1; grid-row: auto; }
 }
+
+/* ---------- Đồng hồ Pomodoro ---------- */
+.pomo {
+  position: fixed; left: 18px; bottom: 18px; z-index: 130;
+  width: 222px; padding: 10px 12px 12px;
+  background: var(--paper);
+  border: 1px solid var(--ink); border-radius: 12px;
+  box-shadow: 0 8px 26px rgba(20, 17, 14, 0.18);
+  display: flex; flex-direction: column; gap: 8px;
+  --pomo-hue: var(--amber);
+}
+.pomo[data-phase="short"] { --pomo-hue: var(--herb); }
+.pomo[data-phase="long"] { --pomo-hue: var(--slate); }
+.pomo-head { display: flex; align-items: center; gap: 6px; }
+.pomo-badge {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.13em;
+  color: var(--pomo-hue); margin-right: auto; white-space: nowrap;
+}
+.pbtn {
+  font-family: var(--sans); font-size: 13px; line-height: 1;
+  color: var(--ink); background: transparent;
+  border: 1px solid var(--line); border-radius: 6px;
+  width: 22px; height: 22px; cursor: pointer; padding: 0;
+}
+.pbtn:hover { border-color: var(--ink); }
+
+.pomo-dial { position: relative; align-self: center; width: 128px; height: 128px; }
+.pomo-dial svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.pomo-dial .track { fill: none; stroke: var(--line); stroke-width: 7; }
+.pomo-dial .arc {
+  fill: none; stroke: var(--pomo-hue); stroke-width: 7; stroke-linecap: round;
+  transition: stroke-dashoffset .3s linear;
+}
+.pomo-time {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 27px; font-weight: 500;
+  letter-spacing: -0.01em; color: var(--ink);
+}
+.pomo.paused .pomo-time { opacity: 0.5; }
+
+.pomo-act { display: flex; gap: 6px; }
+.pomo-act .btn { flex: 1 1 auto; padding: 6px 8px; font-size: 12.5px; border-radius: 7px; }
+.pomo-act .btn-ic { flex: 0 0 auto; padding: 6px 9px; }
+
+.pomo-dots { display: flex; gap: 5px; justify-content: center; }
+.pomo-dots i {
+  width: 9px; height: 9px; border-radius: 50%;
+  border: 1px solid var(--amber); background: transparent;
+}
+.pomo-dots i.on { background: var(--amber); }
+.pomo-stat { margin: 0; font-size: 11.5px; line-height: 1.35; color: rgba(20, 17, 14, 0.62); text-align: center; }
+
+.pomo-cfg summary {
+  font-size: 11.5px; font-weight: 600; color: rgba(20, 17, 14, 0.62);
+  cursor: pointer; list-style: none; text-align: center;
+}
+.pomo-cfg summary::-webkit-details-marker { display: none; }
+.pomo-cfg summary:hover { color: var(--ink); }
+.pomo-cfg[open] summary { margin-bottom: 6px; }
+.pomo-row { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-bottom: 5px; }
+.pomo-row span { margin-right: auto; }
+.pomo-row input[type="number"] {
+  width: 52px; font-family: var(--mono); font-size: 12px;
+  padding: 3px 5px; border: 1px solid var(--line); border-radius: 6px;
+  background: transparent; color: var(--ink);
+}
+.pomo-row.check-row { gap: 7px; }
+.pomo-row.check-row span { margin-right: 0; }
+.pomo-row input[type="checkbox"] { margin: 0; }
+
+/* Thu gọn: chỉ còn viên thuốc hiện giờ còn lại */
+.pomo.mini { width: auto; padding: 6px 9px; flex-direction: row; align-items: center; gap: 8px; }
+.pomo.mini .pomo-dial { width: auto; height: auto; }
+.pomo.mini .pomo-dial svg { display: none; }
+.pomo.mini .pomo-time {
+  position: static; font-size: 17px;
+  border-left: 3px solid var(--pomo-hue); padding-left: 8px;
+}
+.pomo.mini .pomo-badge, .pomo.mini .pomo-dots,
+.pomo.mini .pomo-stat, .pomo.mini .pomo-cfg { display: none; }
+.pomo.mini .pomo-head { order: 3; gap: 4px; }
+.pomo.mini .pomo-act { flex: 0 0 auto; }
+.pomo.mini .pomo-act .btn-hide { display: none; }
+
+/* Trong lúc đọc toàn màn hình, đồng hồ được chuyển vào phần tử fullscreen */
+.book .pomo { left: 14px; bottom: 14px; }
+
+@media (max-width: 720px) {
+  .pomo { left: 10px; bottom: 10px; width: 196px; }
+  .pomo-dial { width: 104px; height: 104px; }
+  .pomo-time { font-size: 23px; }
+}

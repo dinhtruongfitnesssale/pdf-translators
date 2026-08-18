@@ -92,6 +92,7 @@
       <button id="findBtn" class="btn" type="button" title="Tìm chữ trong bản gốc &amp; bản dịch (Ctrl+F hoặc phím F)" disabled>🔎 Tìm chữ</button>
       <button id="hlBtn" class="btn" type="button" title="Bật/tắt bôi vàng bằng cách kéo vùng trên trang gốc (phím H)" aria-pressed="false" disabled>🖍 Bôi</button>
       <button id="drawerBtn" class="btn" type="button" title="Bookmark · Highlight · Ghi chú Cornell (phím N)" aria-expanded="false" disabled>✎ Ghi chú</button>
+      <button id="pomoBtn" class="btn" type="button" title="Đồng hồ Pomodoro: đọc 25 phút rồi nghỉ 5 phút (phím P)" aria-expanded="false">🍅 Pomodoro</button>
 
       <div class="backup" role="group" aria-label="Sao lưu dữ liệu">
         <button id="backupBtn" class="btn" type="button" title="Xuất bản dịch + API key ra một file để phòng khi mất dữ liệu">⇩ Sao lưu</button>
@@ -234,6 +235,37 @@
       </section>
     </div>
   </aside>
+
+  <!-- Đồng hồ Pomodoro: đọc 25 phút, nghỉ 5 phút, 4 lượt thì nghỉ dài -->
+  <div id="pomo" class="pomo" hidden data-phase="focus" aria-label="Đồng hồ Pomodoro">
+    <div class="pomo-head">
+      <span class="pomo-badge" id="pomoPhase">TẬP TRUNG</span>
+      <button id="pomoMin" class="pbtn" type="button" title="Thu gọn">–</button>
+      <button id="pomoClose" class="pbtn" type="button" title="Đóng (phím P)">✕</button>
+    </div>
+    <div class="pomo-dial">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <circle class="track" cx="50" cy="50" r="43"></circle>
+        <circle class="arc" id="pomoArc" cx="50" cy="50" r="43"></circle>
+      </svg>
+      <div class="pomo-time" id="pomoTime" role="timer">25:00</div>
+    </div>
+    <div class="pomo-act">
+      <button id="pomoStart" class="btn btn-sm btn-primary" type="button">▶ Bắt đầu</button>
+      <button id="pomoSkip" class="btn btn-sm btn-ic btn-hide" type="button" title="Sang phiên kế tiếp">⏭</button>
+      <button id="pomoReset" class="btn btn-sm btn-ic btn-hide" type="button" title="Đặt lại phiên này">↺</button>
+    </div>
+    <div class="pomo-dots" id="pomoDots"></div>
+    <p class="pomo-stat" id="pomoStat"></p>
+    <details class="pomo-cfg">
+      <summary>Tùy chỉnh</summary>
+      <label class="pomo-row"><span>Phiên đọc (phút)</span><input id="pomoCfgFocus" type="number" min="1" max="180" step="1" /></label>
+      <label class="pomo-row"><span>Nghỉ ngắn</span><input id="pomoCfgShort" type="number" min="1" max="180" step="1" /></label>
+      <label class="pomo-row"><span>Nghỉ dài</span><input id="pomoCfgLong" type="number" min="1" max="180" step="1" /></label>
+      <label class="pomo-row check-row"><input id="pomoCfgAuto" type="checkbox" /><span>Tự chạy phiên kế tiếp</span></label>
+      <label class="pomo-row check-row"><input id="pomoCfgSound" type="checkbox" /><span>Chuông báo hết giờ</span></label>
+    </details>
+  </div>
 
   <!-- Thanh nổi chọn màu bôi / gửi vào ghi chú -->
   <div id="selbar" class="selbar" hidden></div>
