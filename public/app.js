@@ -7,7 +7,9 @@ const $ = (id) => document.getElementById(id);
 const providerEl = $('provider');
 const apiKeyEl = $('apiKey');
 const modelEl = $('model');
-const modelList = $('modelList');
+const modelComboEl = $('modelCombo');
+const modelArrowEl = $('modelArrow');
+const modelMenuEl = $('modelMenu');
 const skillEl = $('skill');
 const rememberEl = $('rememberKey');
 const toggleKeyEl = $('toggleKey');
@@ -243,10 +245,85 @@ const RETIRED_MODELS = {
 };
 const migrateModel = (m) => RETIRED_MODELS[String(m || '').trim()] || m;
 
+// ---------- Ô Model: hộp chọn tự làm ----------
+// Trước đây ô này dùng <datalist>: trình duyệt lọc gợi ý theo chữ đang có trong ô,
+// mà ô luôn chứa sẵn tên model đầy đủ nên bấm mũi tên chẳng ra gì. Nay tự vẽ menu.
+let modelOptions = [];
+let modelActive = -1;
+
+function renderModelMenu() {
+  const cur = modelEl.value.trim();
+  if (!modelOptions.length) {
+    modelMenuEl.innerHTML = '<li class="combo-empty">Chưa có danh sách model — nhập tên model vào ô.</li>';
+    return;
+  }
+  modelMenuEl.innerHTML = modelOptions
+    .map((m, i) => `<li role="option" data-i="${i}" aria-selected="${m === cur}" title="${m}">${m}</li>`)
+    .join('');
+  modelActive = modelOptions.indexOf(cur);
+  highlightModelItem();
+}
+
+function highlightModelItem() {
+  const items = [...modelMenuEl.querySelectorAll('li[data-i]')];
+  items.forEach((li, i) => li.classList.toggle('active', i === modelActive));
+  if (modelActive >= 0 && items[modelActive]) items[modelActive].scrollIntoView({ block: 'nearest' });
+}
+
+function openModelMenu() {
+  renderModelMenu();
+  modelMenuEl.hidden = false;
+  modelComboEl.classList.add('open');
+  modelEl.setAttribute('aria-expanded', 'true');
+}
+
+function closeModelMenu() {
+  modelMenuEl.hidden = true;
+  modelComboEl.classList.remove('open');
+  modelEl.setAttribute('aria-expanded', 'false');
+  modelActive = -1;
+}
+
+function pickModel(i) {
+  const m = modelOptions[i];
+  if (!m) return;
+  modelEl.value = m;
+  saveSettings();
+  closeModelMenu();
+}
+
+modelArrowEl.addEventListener('mousedown', (e) => e.preventDefault()); // giữ con trỏ trong ô
+modelArrowEl.addEventListener('click', () => {
+  if (modelMenuEl.hidden) { openModelMenu(); modelEl.focus(); } else closeModelMenu();
+});
+modelMenuEl.addEventListener('mousedown', (e) => e.preventDefault());
+modelMenuEl.addEventListener('click', (e) => {
+  const li = e.target.closest('li[data-i]');
+  if (li) pickModel(Number(li.dataset.i));
+});
+modelEl.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (modelMenuEl.hidden) { openModelMenu(); return; }
+    if (!modelOptions.length) return;
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    modelActive = (modelActive + step + modelOptions.length) % modelOptions.length;
+    highlightModelItem();
+  } else if (e.key === 'Enter') {
+    if (!modelMenuEl.hidden && modelActive >= 0) { e.preventDefault(); pickModel(modelActive); }
+  } else if (e.key === 'Escape') {
+    if (!modelMenuEl.hidden) { e.stopPropagation(); closeModelMenu(); }
+  }
+});
+modelEl.addEventListener('blur', closeModelMenu);
+document.addEventListener('click', (e) => {
+  if (!modelMenuEl.hidden && !modelComboEl.contains(e.target)) closeModelMenu();
+});
+
 function applyModelSuggest(preferred) {
   const list = MODEL_SUGGEST[providerEl.value] || [];
   const want = migrateModel(preferred);
-  modelList.innerHTML = list.map((m) => `<option value="${m}"></option>`).join('');
+  modelOptions = list.slice();
   if (want && (list.includes(want) || want.length)) modelEl.value = want;
   else modelEl.value = list[0] || '';
 }
@@ -268,7 +345,8 @@ async function refreshModelList() {
     if (!r.ok || !Array.isArray(data.models) || !data.models.length) return;
     MODEL_SUGGEST.gemini = data.models;
     const cur = modelEl.value.trim();
-    modelList.innerHTML = data.models.map((m) => `<option value="${m}"></option>`).join('');
+    modelOptions = data.models.slice();
+    if (!modelMenuEl.hidden) renderModelMenu();
     if (!cur || !data.models.includes(cur)) {
       modelEl.value = data.models.includes(data.default) ? data.default : data.models[0];
       saveSettings();

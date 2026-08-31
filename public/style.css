@@ -111,6 +111,36 @@ body {
 }
 .field input:focus, .field select:focus { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(181,101,30,0.14); }
 
+/* Ô Model: hộp chọn tự làm (datalist của trình duyệt lọc theo chữ đang gõ nên
+   bấm mũi tên thường không hiện gì) */
+.combo { position: relative; display: flex; }
+.combo input { flex: 1; width: 100%; padding-right: 30px; }
+.combo-arrow {
+  position: absolute; top: 1px; right: 1px; bottom: 1px; width: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: none; cursor: pointer;
+  color: var(--slate); font-size: 12px; line-height: 1;
+  border-radius: 0 6px 6px 0;
+}
+.combo-arrow:hover { color: var(--amber); background: rgba(181,101,30,0.08); }
+.combo.open .combo-arrow { color: var(--amber); }
+.combo-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
+  margin: 0; padding: 4px; list-style: none;
+  max-height: 240px; overflow-y: auto;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(20, 17, 14, 0.16);
+}
+.combo-menu li {
+  font-family: var(--mono); font-size: 12.5px; color: var(--ink);
+  padding: 7px 9px; border-radius: 6px; cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.combo-menu li:hover, .combo-menu li.active { background: rgba(181,101,30,0.12); }
+.combo-menu li[aria-selected="true"] { color: var(--amber); font-weight: 600; }
+.combo-menu .combo-empty { color: var(--slate); font-family: var(--sans); cursor: default; }
+.combo-menu .combo-empty:hover { background: none; }
+
 /* Ô API key: nút Hiện/Ẩn nằm bên phải ô nhập */
 .key-wrap { position: relative; display: flex; }
 .key-wrap input { flex: 1; width: 100%; padding-right: 52px; }

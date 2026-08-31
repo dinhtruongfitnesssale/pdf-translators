@@ -42,8 +42,13 @@
 
       <label class="field">
         <span>Model</span>
-        <input id="model" list="modelList" placeholder="model" />
-        <datalist id="modelList"></datalist>
+        <span class="combo" id="modelCombo">
+          <input id="model" placeholder="model" autocomplete="off" role="combobox"
+                 aria-expanded="false" aria-controls="modelMenu" aria-autocomplete="list" />
+          <button id="modelArrow" type="button" class="combo-arrow" tabindex="-1"
+                  aria-label="Chọn model" title="Chọn model">&#9662;</button>
+          <ul id="modelMenu" class="combo-menu" role="listbox" hidden></ul>
+        </span>
       </label>
 
       <label class="field">
