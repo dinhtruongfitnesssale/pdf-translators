@@ -128,7 +128,8 @@ if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 // ---------- State ----------
 const MODEL_SUGGEST = {
   gemini: ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-pro'],
-  claude: ['claude-opus-4-8', 'claude-haiku-4-5', 'claude-sonnet-5'],
+  // Gợi ý sẵn khi chưa có key; có key rồi thì danh sách được hỏi thẳng Anthropic (refreshModelList).
+  claude: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-2'],
 };
 let docId = null;
 let docTitle = 'ban-dich';

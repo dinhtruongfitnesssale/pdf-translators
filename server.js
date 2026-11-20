@@ -138,18 +138,54 @@ app.post('/api/synthesize', async (req, res) => {
   }
 });
 
+// --- Model Claude ---
+// Từ Claude Opus 5.5 trở đi, model luôn "nghĩ" trước khi trả lời (không tắt được) và phần
+// nghĩa cũng tính vào max_tokens → để rộng tay cho bản dịch dài khỏi bị cắt giữa chừng.
+const CLAUDE_DEFAULT_MODEL = 'claude-opus-5-5';
+// Model có lớp lọc an toàn có thể từ chối nhầm (vd. tài liệu y sinh). Với các model này
+// bật "fallbacks": server Anthropic tự chạy lại trên model thay thế phù hợp.
+const CLAUDE_FALLBACK_MODELS = new Set([
+  'claude-opus-5-5', 'claude-opus-5', 'claude-sonnet-5-5', 'claude-fable-5-1', 'claude-fable-5-2',
+]);
+const CLAUDE_FALLBACK_BETA = 'server-side-fallback-2026-07-01';
+
 async function translateClaude({ apiKey, model, system, text }) {
   const client = new Anthropic({ apiKey });
-  const resp = await client.messages.create({
-    model: model || 'claude-opus-4-8',
-    max_tokens: 8000,
+  const m = String(model || '').trim() || CLAUDE_DEFAULT_MODEL;
+  const params = {
+    model: m,
+    max_tokens: 16000,
     system,
     messages: [{ role: 'user', content: text }],
-  });
-  return (resp.content || [])
+  };
+  let resp;
+  try {
+    if (CLAUDE_FALLBACK_MODELS.has(m)) {
+      try {
+        resp = await client.beta.messages.create({ ...params, betas: [CLAUDE_FALLBACK_BETA], fallbacks: 'default' });
+      } catch (e) {
+        // Tài khoản/khu vực chưa có tính năng fallback thì gọi lại bình thường, đừng làm hỏng bản dịch.
+        if (!(e instanceof Anthropic.BadRequestError && /fallback/i.test(e.message || ''))) throw e;
+        resp = await client.messages.create(params);
+      }
+    } else {
+      resp = await client.messages.create(params);
+    }
+  } catch (e) {
+    e.provider = 'claude';
+    throw e;
+  }
+  if (resp.stop_reason === 'refusal') {
+    const e = new Error('Claude từ chối đoạn này (bộ lọc an toàn). Thử model khác hoặc chia nhỏ đoạn.');
+    e.provider = 'claude';
+    throw e;
+  }
+  const out = (resp.content || [])
     .filter((b) => b.type === 'text')
     .map((b) => b.text)
     .join('');
+  if (resp.stop_reason === 'max_tokens') console.warn(`[claude] "${m}" chạm giới hạn max_tokens — bản dịch có thể bị cụt.`);
+  return out;
 }
 
 async function translateGemini({ apiKey, model, system, text }) {
@@ -206,16 +242,32 @@ function normalizeError(err) {
     return 'Vượt giới hạn lượt gọi (rate limit / quota). Đợi một chút rồi thử lại.';
   }
   if (s === 404 || /not found|not supported|NOT_FOUND|is not found for API version/i.test(msg)) {
+    if (err?.provider === 'claude') {
+      return 'Model Claude này không tồn tại hoặc key chưa được dùng. Chọn model khác, ví dụ "' + CLAUDE_DEFAULT_MODEL + '".';
+    }
     return 'Model này không còn khả dụng (Google đã gỡ). Mở Cài đặt và chọn model mới, ví dụ "' + GEMINI_DEFAULT_MODEL + '".';
   }
   return msg;
 }
 
-// --- DANH SÁCH MODEL (hỏi thẳng Google bằng key của người dùng) ---
+// --- DANH SÁCH MODEL (hỏi thẳng Google / Anthropic bằng key của người dùng) ---
 app.post('/api/models', async (req, res) => {
   try {
     const { provider, apiKey } = req.body || {};
     if (!apiKey) return res.status(400).json({ error: 'Thiếu API key.' });
+    if (provider === 'claude') {
+      // Models API trả về model mới nhất trước; chỉ những model key này được dùng.
+      const models = [];
+      try {
+        for await (const m of new Anthropic({ apiKey }).models.list({ limit: 100 })) {
+          if (/^claude-/.test(m.id)) models.push(m.id);
+        }
+      } catch (e) {
+        e.provider = 'claude';
+        throw e;
+      }
+      return res.json({ models, default: CLAUDE_DEFAULT_MODEL });
+    }
     if (provider !== 'gemini') return res.json({ models: [] });
     const r = await fetch(
       'https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + encodeURIComponent(apiKey)

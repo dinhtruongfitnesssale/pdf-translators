@@ -32,6 +32,13 @@ const RETIRED_MODELS = {
   'gemini-1.5-flash': 'gemini-3.5-flash-lite',
   'gemini-1.5-flash-8b': 'gemini-3.5-flash-lite',
   'gemini-1.5-pro': 'gemini-3.7-flash',
+  // Claude đời cũ còn chạy nhưng đã có bản mới hơn (rẻ hơn) cùng dòng → tự lên đời.
+  'claude-opus-4-8': 'claude-opus-5-5',
+  'claude-opus-4-7': 'claude-opus-5-5',
+  'claude-opus-5': 'claude-opus-5-5',
+  'claude-sonnet-5': 'claude-sonnet-5-5',
+  'claude-sonnet-4-6': 'claude-sonnet-5-5',
+  'claude-haiku-4-5': 'claude-haiku-5-5',
 };
 const migrateModel = (m) => RETIRED_MODELS[String(m || '').trim()] || m;
 
@@ -118,22 +125,25 @@ function applyModelSuggest(preferred) {
   else modelEl.value = list[0] || '';
 }
 
-// Hỏi thẳng Google xem key này còn dùng được model nào, rồi thay danh sách gợi ý.
-// Nhờ vậy mỗi lần Google đổi đời model, người dùng không phải chờ cập nhật ứng dụng.
+// Hỏi thẳng Google / Anthropic xem key này dùng được model nào, rồi thay danh sách gợi ý.
+// Nhờ vậy mỗi lần nhà cung cấp đổi đời model, người dùng không phải chờ cập nhật ứng dụng.
 let modelFetchKey = '';
 async function refreshModelList() {
   const apiKey = apiKeyEl.value.trim();
-  if (providerEl.value !== 'gemini' || !apiKey || apiKey === modelFetchKey) return;
-  modelFetchKey = apiKey;
+  const provider = providerEl.value;
+  const fetchKey = provider + ':' + apiKey;
+  if ((provider !== 'gemini' && provider !== 'claude') || !apiKey || fetchKey === modelFetchKey) return;
+  modelFetchKey = fetchKey;
   try {
     const r = await fetch('/api/models', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'gemini', apiKey }),
+      body: JSON.stringify({ provider, apiKey }),
     });
     const data = await r.json();
     if (!r.ok || !Array.isArray(data.models) || !data.models.length) return;
-    MODEL_SUGGEST.gemini = data.models;
+    if (providerEl.value !== provider) return; // người dùng đã đổi nhà cung cấp trong lúc chờ
+    MODEL_SUGGEST[provider] = data.models;
     const cur = modelEl.value.trim();
     modelOptions = data.models.slice();
     if (!modelMenuEl.hidden) renderModelMenu();
