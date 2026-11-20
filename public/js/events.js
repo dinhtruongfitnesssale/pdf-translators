@@ -9,7 +9,11 @@ fileInput.addEventListener('change', () => {
   const f = fileInput.files && fileInput.files[0];
   if (f) { closeNav(); openFile(f).catch((e) => setStatus('Không mở được PDF: ' + e.message, 'error')); }
 });
-translateBtn.addEventListener('click', () => { closeNav(); openRangeModal(); });
+translateBtn.addEventListener('click', () => {
+  closeNav();
+  if (TR_RUN) requestStopTr(); // đang dịch hàng loạt → nút này là "Dừng dịch"
+  else openRangeModal();
+});
 exportBtn.addEventListener('click', exportPdf);
 closeBtn.addEventListener('click', () => { closeNav(); closeDoc(); });
 
@@ -57,7 +61,7 @@ modalEl.addEventListener('click', (e) => { if (e.target === modalEl) closeRangeM
 rangeAllEl.addEventListener('change', () => {
   rangeFromEl.disabled = rangeAllEl.checked;
   rangeToEl.disabled = rangeAllEl.checked;
-  setModalHint(rangeAllEl.checked ? 'Sẽ dịch toàn bộ tài liệu.' : '');
+  setModalHint([rangeAllEl.checked ? 'Sẽ dịch toàn bộ tài liệu.' : '', overlaySkipNote()].filter(Boolean).join(' '));
 });
 document.addEventListener('keydown', (e) => {
   if (modalEl.hidden) return;

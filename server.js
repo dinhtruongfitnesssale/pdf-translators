@@ -400,43 +400,7 @@ app.post('/api/export', (req, res) => {
   }
 });
 
-// --- XUẤT PDF "ĐÈ TRANG" ---
-// Mỗi trang đã được ghép sẵn ở trình duyệt thành 1 ảnh (bản gốc + chữ Việt đè lên).
-// Server chỉ việc đặt mỗi ảnh làm một trang PDF đúng khổ (điểm = points).
-app.post('/api/export-overlay', (req, res) => {
-  try {
-    const { title, pages } = req.body || {};
-    const items = Array.isArray(pages) ? pages : [];
-    if (!items.length) return res.status(400).json({ error: 'Không có nội dung để xuất.' });
-
-    const dataUrlToBuffer = (src) => {
-      const m = /^data:[^;]+;base64,(.*)$/.exec(src || '');
-      if (!m) return null;
-      try { return Buffer.from(m[1], 'base64'); } catch { return null; }
-    };
-    const sizeOf = (p) => [Math.max(1, Math.round(p.w || 595)), Math.max(1, Math.round(p.h || 842))];
-
-    const first = sizeOf(items[0]);
-    const doc = new PDFDocument({ size: first, margin: 0, bufferPages: true });
-
-    const safeTitle = (title || 'ban-dich').replace(/[^\p{L}\p{N}\-_ ]/gu, '').trim() || 'ban-dich';
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeTitle)}.pdf"`);
-    doc.pipe(res);
-
-    items.forEach((p, i) => {
-      const [w, h] = sizeOf(p);
-      if (i > 0) doc.addPage({ size: [w, h], margin: 0 });
-      const buf = dataUrlToBuffer(p.img);
-      if (buf) { try { doc.image(buf, 0, 0, { width: w, height: h }); } catch {} }
-    });
-
-    doc.end();
-  } catch (err) {
-    console.error('export-overlay error:', err?.message || err);
-    if (!res.headersSent) res.status(500).json({ error: 'Lỗi khi tạo PDF: ' + (err?.message || err) });
-  }
-});
+// (Xuất PDF "Đè trang" nay ghép ngay trong trình duyệt — xem buildImagePdf trong public/js/overlay.js)
 
 // --- XUẤT PDF GHI CHÚ CORNELL ---
 // Một tài liệu ôn tập riêng: tổng hợp cả sách + từng chương (Cue | Notes | Summary),

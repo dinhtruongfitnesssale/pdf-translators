@@ -39,13 +39,14 @@ function fmtSize(bytes) {
 }
 // Đếm số trang đã có bản dịch của một tài liệu (để báo cho người dùng biết
 // bản sao lưu chứa những gì).
-function countTranslated(id) {
+async function countTranslated(id) {
   const tr = readJsonKey(trKey(id)) || {};
   let n = 0;
   for (const v of Object.values(tr)) {
     if (typeof v === 'string' ? v.trim() : Array.isArray(v) && v.length) n++;
   }
-  const ov = readJsonKey(ovKey(id)) || {};
+  let ov = {};
+  try { ov = await ovIdbAll(id); } catch {}
   const nt = readJsonKey(noteKey(id)) || {};
   return {
     pages: n,
@@ -58,6 +59,8 @@ async function buildBackup({ withKey, withPdf }) {
   const lib = loadLibrary();
   const docs = [];
   for (const meta of lib) {
+    let ov = {};
+    try { ov = await ovIdbAll(meta.id); } catch {}
     const item = {
       id: meta.id,
       name: meta.name,
@@ -67,7 +70,7 @@ async function buildBackup({ withKey, withPdf }) {
       page: localStorage.getItem(pageKey(meta.id)),
       tpage: localStorage.getItem(tPageKey(meta.id)),
       tr: readJsonKey(trKey(meta.id)) || {},
-      ov: readJsonKey(ovKey(meta.id)) || {},
+      ov, // bản dịch "Đè trang" (IndexedDB) — cùng định dạng { trang: { h, vi } } như trước
       note: readJsonKey(noteKey(meta.id)) || null, // bookmark + highlight + ghi chú
       pdf: null,
     };
@@ -102,16 +105,16 @@ async function buildBackup({ withKey, withPdf }) {
   };
 }
 
-function openBackupModal() {
+async function openBackupModal() {
   const lib = loadLibrary();
-  const totals = lib.reduce((acc, d) => {
-    const c = countTranslated(d.id);
-    acc.pages += c.pages;
-    acc.overlay += c.overlay;
-    acc.marks += c.marks;
-    acc.bytes += Number(d.size) || 0;
-    return acc;
-  }, { pages: 0, overlay: 0, marks: 0, bytes: 0 });
+  const totals = { pages: 0, overlay: 0, marks: 0, bytes: 0 };
+  for (const d of lib) {
+    const c = await countTranslated(d.id);
+    totals.pages += c.pages;
+    totals.overlay += c.overlay;
+    totals.marks += c.marks;
+    totals.bytes += Number(d.size) || 0;
+  }
   backupSummaryEl.innerHTML = lib.length
     ? `Có <b>${lib.length}</b> tài liệu, <b>${totals.pages}</b> trang bản dịch` +
       (totals.overlay ? `, <b>${totals.overlay}</b> trang “Đè trang”` : '') +
@@ -184,7 +187,9 @@ async function applyBackup(data) {
     if (known < 0 && lib.length >= MAX_DOCS) { skipped++; full = true; continue; }
 
     if (!mergeStore(trKey(d.id), d.tr)) quota = true;
-    if (!mergeStore(ovKey(d.id), d.ov)) quota = true;
+    if (d.ov && typeof d.ov === 'object') {
+      try { await ovIdbPutMany(d.id, d.ov); } catch { quota = true; }
+    }
     if (!mergeNoteStore(d.id, d.note)) quota = true;
     if (d.page != null) localStorage.setItem(pageKey(d.id), String(d.page));
     if (d.tpage != null) localStorage.setItem(tPageKey(d.id), String(d.tpage));

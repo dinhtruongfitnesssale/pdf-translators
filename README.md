@@ -67,5 +67,8 @@ Hoặc bằng CLI: `npm i -g vercel` rồi `vercel` trong thư mục dự án.
   Highlight ở cột bản dịch lưu theo **vị trí ký tự** kèm đoạn chữ gốc để tự neo lại khi bạn sửa bản dịch —
   bản dịch vẫn là văn bản thuần như trước, không nhét thẻ HTML vào.
   Vùng bôi trên trang lưu theo **tỉ lệ bề rộng trang** nên đúng chỗ ở mọi mức zoom.
+- Bản dịch chế độ **Đè trang** lưu trong IndexedDB của trình duyệt (mỗi trang một bản ghi) nên chứa được cả cuốn sách;
+  dịch hàng loạt bỏ qua trang đã dịch, tự thử lại khi bị nghẽn, có nút Dừng. PDF Đè trang được ghép ngay trong
+  trình duyệt (mỗi trang một ảnh JPEG) — không gửi ảnh lên server nên không vướng giới hạn dung lượng của Vercel.
 - Tìm chữ không lưu gì cả: bản dịch có sẵn trong bộ nhớ nên ra kết quả tức thì, còn bản gốc được trích chữ
   dần theo trang (có báo tiến độ) rồi nhớ đệm lại cho những lần tìm sau trong cùng phiên.

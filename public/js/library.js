@@ -6,12 +6,87 @@
 // ---------- Last-opened PDF (IndexedDB) + scroll position ----------
 const IDB_NAME = 'ptr';
 const IDB_STORE = 'docs';
+// Bản dịch chế độ "Đè trang": mỗi trang một bản ghi, khoá `docId␁trang`.
+// (Trước đây nằm trong localStorage — chỉ ~5MB cho cả app, không đủ cho một cuốn sách.)
+const IDB_OV = 'ov';
+let idbConn = null;
 function idbOpen() {
+  if (idbConn) return idbConn;
+  idbConn = new Promise((res, rej) => {
+    const r = indexedDB.open(IDB_NAME, 2);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+      if (!db.objectStoreNames.contains(IDB_OV)) db.createObjectStore(IDB_OV);
+    };
+    r.onsuccess = () => {
+      const db = r.result;
+      db.onversionchange = () => { db.close(); idbConn = null; }; // tab khác cần nâng cấp
+      res(db);
+    };
+    r.onerror = () => { idbConn = null; rej(r.error); };
+    r.onblocked = () => { idbConn = null; rej(new Error('Hãy đóng các tab khác của ứng dụng rồi tải lại trang.')); };
+  });
+  return idbConn;
+}
+
+const ovIdbKey = (id, idx) => `${id}\u0001${idx}`;
+const ovIdbRange = (id) => IDBKeyRange.bound(`${id}\u0001`, `${id}\u0001￿`);
+async function ovIdbPut(id, idx, rec) {
+  const db = await idbOpen();
   return new Promise((res, rej) => {
-    const r = indexedDB.open(IDB_NAME, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore(IDB_STORE);
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
+    const tx = db.transaction(IDB_OV, 'readwrite');
+    tx.objectStore(IDB_OV).put(rec, ovIdbKey(id, idx));
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+    tx.onabort = () => rej(tx.error || new Error('Không ghi được'));
+  });
+}
+async function ovIdbPutMany(id, obj) {
+  const keys = Object.keys(obj || {});
+  if (!keys.length) return;
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(IDB_OV, 'readwrite');
+    const st = tx.objectStore(IDB_OV);
+    for (const k of keys) st.put(obj[k], ovIdbKey(id, k));
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+    tx.onabort = () => rej(tx.error || new Error('Không ghi được'));
+  });
+}
+// { chỉSốTrang: { h, vi } } — gộp luôn dữ liệu cũ còn sót trong localStorage (rồi dọn đi)
+async function ovIdbAll(id) {
+  const legacyKey = `ptr.ov.${id}`;
+  const legacyRaw = localStorage.getItem(legacyKey);
+  if (legacyRaw) {
+    try {
+      await ovIdbPutMany(id, JSON.parse(legacyRaw) || {});
+      localStorage.removeItem(legacyKey);
+    } catch {}
+  }
+  const db = await idbOpen();
+  return new Promise((res, rej) => {
+    const out = {};
+    const tx = db.transaction(IDB_OV, 'readonly');
+    const rq = tx.objectStore(IDB_OV).openCursor(ovIdbRange(id));
+    rq.onsuccess = () => {
+      const c = rq.result;
+      if (!c) { res(out); return; }
+      out[String(c.key).split('\u0001')[1]] = c.value;
+      c.continue();
+    };
+    rq.onerror = () => rej(rq.error);
+  });
+}
+async function ovIdbDelDoc(id) {
+  localStorage.removeItem(`ptr.ov.${id}`);
+  const db = await idbOpen();
+  return new Promise((res) => {
+    const tx = db.transaction(IDB_OV, 'readwrite');
+    tx.objectStore(IDB_OV).delete(ovIdbRange(id));
+    tx.oncomplete = () => res();
+    tx.onerror = () => res();
   });
 }
 async function idbSet(key, val) {
@@ -150,7 +225,7 @@ async function removeDoc(id) {
   try { await idbDel(id); } catch {}
   saveLibrary(loadLibrary().filter((d) => d.id !== id));
   localStorage.removeItem(trKey(id));
-  localStorage.removeItem(ovKey(id));
+  try { await ovIdbDelDoc(id); } catch {}
   localStorage.removeItem(noteKey(id));
   localStorage.removeItem(pageKey(id));
   localStorage.removeItem(tPageKey(id));

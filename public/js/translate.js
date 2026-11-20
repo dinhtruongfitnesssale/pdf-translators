@@ -47,6 +47,34 @@ async function translateOne(entry, force = false) {
   }
 }
 
+// ---------- Đang dịch hàng loạt ----------
+// Trong lúc chạy, nút "Dịch tài liệu" biến thành "Dừng dịch" (dừng sau trang đang dịch dở).
+let TR_RUN = null;
+function startTrRun() {
+  TR_RUN = { stop: false, doc: docId };
+  translateBtn.textContent = 'Dừng dịch';
+  translateBtn.classList.add('btn-danger');
+  translateBtn.disabled = false;
+  openBtn.disabled = true;
+  return TR_RUN;
+}
+function endTrRun() {
+  TR_RUN = null;
+  translateBtn.textContent = 'Dịch tài liệu';
+  translateBtn.classList.remove('btn-danger');
+  translateBtn.disabled = !pdfDoc;
+  openBtn.disabled = false;
+}
+function requestStopTr() {
+  if (!TR_RUN) return;
+  TR_RUN.stop = true;
+  translateBtn.disabled = true;
+  translateBtn.textContent = 'Đang dừng…';
+  setStatus('Sẽ dừng sau khi xong trang đang dịch…', 'working');
+}
+// Hết lượt vì tài liệu đã đóng / đổi sang tài liệu khác?
+const trRunCancelled = (run) => run.stop || docId !== run.doc;
+
 // ---------- Modal chọn phạm vi ----------
 function setModalHint(msg, error) {
   modalHintEl.textContent = msg || '';
@@ -62,11 +90,17 @@ function openRangeModal() {
   rangeAllEl.checked = false;
   rangeFromEl.disabled = false;
   rangeToEl.disabled = false;
-  setModalHint('');
+  setModalHint(overlaySkipNote());
   modalEl.hidden = false;
   rangeFromEl.focus();
 }
 function closeRangeModal() { modalEl.hidden = true; }
+// Ở chế độ Đè trang: báo trước những trang đã dịch sẽ được bỏ qua
+function overlaySkipNote() {
+  if (viewMode !== 'overlay') return '';
+  const done = overlayPages.filter((e) => e.translated).length;
+  return done ? `Đã có ${done}/${pages.length} trang dịch đè trang — các trang này sẽ được bỏ qua (muốn dịch lại trang nào thì bấm "Dịch lại" trên trang đó).` : '';
+}
 
 function confirmRange() {
   const total = pages.length;
@@ -93,19 +127,20 @@ async function runTranslate(list) {
   if (!apiKey) { setStatus('Chưa nhập API key.', 'error'); apiKeyEl.focus(); return; }
   if (!list.length) { setStatus('Không có trang nào để dịch.', 'error'); return; }
   saveSettings();
-  translateBtn.disabled = true;
-  openBtn.disabled = true;
-  let ok = 0;
+  const run = startTrRun();
+  let ok = 0, failed = false;
   for (let i = 0; i < list.length; i++) {
+    if (trRunCancelled(run)) break;
     setStatus(`Đang dịch ${i + 1}/${list.length} (trang ${list[i].index + 1})…`, 'working');
     const done = await translateOne(list[i], true);
     if (done) ok++;
-    else break; // dừng nếu lỗi (thường do key/quota) để bạn xử lý
+    else { failed = true; break; } // dừng nếu lỗi (thường do key/quota) để bạn xử lý
   }
-  translateBtn.disabled = false;
-  openBtn.disabled = false;
+  const stopped = run.stop;
+  endTrRun();
   if (ok === list.length) setStatus(`Đã dịch xong ${ok}/${list.length} trang.`, 'done');
-  else setStatus(`Dừng ở ${ok}/${list.length} trang. Kiểm tra thông báo lỗi rồi thử lại.`, 'error');
+  else if (stopped && !failed) setStatus(`Đã dừng ở ${ok}/${list.length} trang.`, '');
+  else if (failed) setStatus(`Dừng ở ${ok}/${list.length} trang. Kiểm tra thông báo lỗi rồi thử lại.`, 'error');
 }
 
 // ---------- Export PDF ----------
