@@ -69,6 +69,9 @@ Hoặc bằng CLI: `npm i -g vercel` rồi `vercel` trong thư mục dự án.
   Vùng bôi trên trang lưu theo **tỉ lệ bề rộng trang** nên đúng chỗ ở mọi mức zoom.
 - Bản dịch chế độ **Đè trang** lưu trong IndexedDB của trình duyệt (mỗi trang một bản ghi) nên chứa được cả cuốn sách;
   dịch hàng loạt bỏ qua trang đã dịch, tự thử lại khi bị nghẽn, có nút Dừng.
+  Chữ Việt dài hơn bản gốc: khối bên dưới bị đẩy xuống; sắp chạm hình / bảng / khung màu thì app chèn
+  khoảng trống phía trên vật đó (kéo giãn một hàng ảnh nền trơn, nên khung màu và hàng bảng dài ra theo),
+  không có chỗ cắt an toàn thì co chữ cho vừa. Nhãn hình chỉ nới rộng vào chỗ trống, không che nét vẽ.
 - PDF Đè trang được ghép ngay trong trình duyệt (`public/js/pdf-writer.js`): mỗi trang một ảnh JPEG + lớp chữ ẩn
   (phông `public/fonts/BeVietnamPro-Regular.ttf` nhúng kèm) để tìm/copy chữ được. Không gửi ảnh lên server nên không
   vướng giới hạn dung lượng của Vercel. Xuất được theo khoảng trang / chương (mục lục 2 cấp) và 3 mức chất lượng.

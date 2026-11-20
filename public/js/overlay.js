@@ -97,7 +97,12 @@ async function extractBlocks(page) {
     let cur = [], curR = -Infinity;
     for (const it of its) {
       const gapMax = 0.9 * Math.min(it.fs, cur.length ? cur[cur.length - 1].fs : it.fs);
-      if (cur.length && it.str.trim() && it.x - curR > gapMax) { makeFrag(cur); cur = []; curR = -Infinity; }
+      if (cur.length && it.x - curR > gapMax) {
+        // Dấu cách lạc từ cột bên cạnh (vd. sau chữ "MC4" của cột phải) — bỏ, đừng để nó
+        // nối dòng cột trái sang tận cột phải
+        if (!it.str.trim()) continue;
+        makeFrag(cur); cur = []; curR = -Infinity;
+      }
       cur.push(it);
       curR = Math.max(curR, it.x + it.w);
     }
@@ -212,8 +217,9 @@ function fitOneLine(ctx, text, b, maxW) {
 // Nhãn hình: ô chật và không được dời chỗ → dòng sát hơn, co chữ tới 70% cỡ gốc, cho
 // rộng hơn ô gốc một chút; vẫn không vừa thì mới tràn xuống (phần tràn sẽ được che nền).
 const OV_LABEL_LINE = 1.15;
-function fitLabel(ctx, text, b) {
-  const wrapW = Math.max(b.w * 1.15, 20);
+function fitLabel(ctx, text, b, maxW = Infinity) {
+  const room = Math.max(b.w, maxW); // không lấn vào nét vẽ / nhãn bên cạnh
+  const wrapW = Math.max(Math.min(b.w * 1.15, room), 20);
   const fMin = Math.max(4, b.fs * 0.7);
   const setFont = (f) => { ctx.font = `${b.bold ? 600 : 400} ${f}px ${OV_FONT}`; };
   // Nhãn một dòng ("Cytosol" → "Bào tương"): thà dài ra một chút còn hơn co chữ tí hon
@@ -222,7 +228,7 @@ function fitLabel(ctx, text, b) {
     for (let f = b.fs; f >= b.fs * 0.8 - 1e-6; f = +(f - 0.25).toFixed(2)) {
       setFont(f);
       const width = ctx.measureText(t).width;
-      if (width <= Math.max(b.w * 1.6, b.w + 3 * b.fs)) {
+      if (width <= Math.min(Math.max(b.w * 1.6, b.w + 3 * b.fs), room)) {
         return { f, lines: [t], needed: b.h, width, lh: f * OV_LABEL_LINE };
       }
     }
@@ -246,13 +252,13 @@ function samplePixel(ctx, x, y) {
   return [d[0], d[1], d[2]];
 }
 function medianColor(cols) {
-  const ch = [0, 1, 2].map((k) => {
+  return [0, 1, 2].map((k) => {
     const a = cols.map((c) => c[k]).sort((m, n) => m - n);
     return a[a.length >> 1];
   });
-  return `rgb(${ch[0]},${ch[1]},${ch[2]})`;
 }
-// Lấy màu nền quanh khối (điểm ngay ngoài hộp chữ) — nền trơn nên rất khớp.
+const rgbStr = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
+// Lấy màu nền quanh khối (điểm ngay ngoài hộp chữ) — nền trơn nên rất khớp. Trả về [r,g,b].
 function sampleBgAround(bctx, b, S) {
   const midY = b.top + b.h / 2;
   const pts = [
@@ -266,6 +272,20 @@ function sampleBgAround(bctx, b, S) {
     cols.push(samplePixel(bctx, dx, dy));
   }
   return cols.length ? medianColor(cols) : null;
+}
+
+// Không chèn được khoảng trống (hình liền mạch, ảnh chụp…): co chữ cho vừa chỗ trống.
+function squeezeBlock(ctx, text, b, maxH) {
+  let best = null;
+  for (const lh of [1.2, 1.12]) {
+    for (let f = b.fs * 0.85; f >= Math.max(6, b.fs * 0.7) - 1e-6; f = +(f - 0.25).toFixed(2)) {
+      ctx.font = `${b.bold ? 600 : 400} ${f}px ${OV_FONT}`;
+      const lines = wrapLines(ctx, text, Math.max(b.w, 24));
+      best = { f, lines, needed: lines.length * f * lh, lh: f * lh };
+      if (best.needed <= maxH) return best;
+    }
+  }
+  return best;
 }
 
 function hashBlocks(blocks) {
@@ -299,80 +319,184 @@ async function composeOverlay(entry, opts) {
   await page.render({ canvasContext: bctx, viewport: page.getViewport({ scale: S }) }).promise;
   const pageBg = samplePixel(bctx, 3, 3); // góc trên-trái ~ màu giấy
 
-  // 2) dàn chữ Việt: khối thân bài dài ra thì đẩy những khối NẰM NGAY DƯỚI nó (chồng
-  //    nhau theo chiều ngang) xuống. Nhãn hình thì đứng yên tại chỗ — dời đi là lạc khỏi
-  //    đường chỉ — và cũng không đẩy ai.
+  // 2) "Bản đồ mực" của trang gốc: điểm ảnh khác màu nền = hình vẽ, đường kẻ, khung màu,
+  //    chữ không dịch. Chỗ chữ SẼ được che rồi vẽ lại (khối có bản dịch) thì bỏ qua.
+  const W = bg.width, H = bg.height;
+  const pix = bctx.getImageData(0, 0, W, H).data;
+  const mask = new Uint8Array(W * H);
+  const viOf = (i) => (vis && vis[i] && String(vis[i]).trim() ? vis[i] : null);
+  const pxX = (v) => Math.max(0, Math.min(W, Math.round(v * S)));
+  const pxY = (v) => Math.max(0, Math.min(H, Math.round(v * S)));
+  blocks.forEach((b, i) => {
+    if (!viOf(i)) return;
+    const x0 = pxX(b.x - 2), x1 = pxX(b.x + b.w + 2);
+    const y0 = pxY(b.top - 1), y1 = pxY(b.top + b.h + 0.3 * b.fs);
+    for (let y = y0; y < y1; y++) mask.fill(1, y * W + x0, y * W + x1);
+  });
+  const isInk = (k, c) => {
+    if (mask[k]) return false;
+    const o = k * 4;
+    return Math.abs(pix[o] - c[0]) + Math.abs(pix[o + 1] - c[1]) + Math.abs(pix[o + 2] - c[2]) > 60;
+  };
+  // Hàng đầu tiên (điểm, toạ độ gốc) có mực bên dưới khối, trong bề ngang của khối
+  const inkBelow = (b, y0, stop, c) => {
+    const x0 = pxX(b.x - 1), x1 = pxX(b.x + b.w + 1);
+    for (let py = pxY(y0); py < H; py++) {
+      if (stop(py / S)) return null;
+      let n = 0;
+      for (let k = py * W + x0, e = py * W + x1; k < e; k++) if (isInk(k, c) && ++n >= 2) return py / S;
+    }
+    return null;
+  };
+  // Khoảng trống bên trái (dir -1) / phải (+1) khối: tới mực hoặc khối khác gần nhất
+  const freeSide = (b, dir, c, maxD) => {
+    let lim = Math.max(0, maxD);
+    for (const o of blocks) {
+      if (o === b || Math.min(o.top + o.h, b.top + b.h) - Math.max(o.top, b.top) <= 0) continue;
+      const d = dir > 0 ? o.x - (b.x + b.w) : b.x - (o.x + o.w);
+      if (d >= 0) lim = Math.min(lim, d);
+    }
+    const y0 = pxY(b.top), y1 = pxY(b.top + b.h);
+    const edge = dir > 0 ? pxX(b.x + b.w + 2) : pxX(b.x - 2) - 1;
+    const lPx = Math.round(lim * S);
+    for (let d = 0; d < lPx; d++) {
+      const x = edge + dir * d;
+      if (x < 0 || x >= W) return d / S;
+      for (let y = y0; y < y1; y++) if (isInk(y * W + x, c)) return d / S;
+    }
+    return lim;
+  };
+  // Hàng ảnh "kéo giãn được": giống hệt hàng trên và dưới nó (nền trơn, khung màu, đường kẻ
+  // dọc) → nhân hàng đó lên thành dải trống mà không làm méo hình
+  const stretchable = (py) => {
+    if (py < 1 || py >= H - 1) return false;
+    for (let x = 0, k = py * W; x < W; x++, k++) {
+      if (mask[k]) continue;
+      const o = k * 4, u = o - 4 * W, d = o + 4 * W;
+      if (Math.abs(pix[o] - pix[u]) + Math.abs(pix[o + 1] - pix[u + 1]) + Math.abs(pix[o + 2] - pix[u + 2]) > 30) return false;
+      if (Math.abs(pix[o] - pix[d]) + Math.abs(pix[o + 1] - pix[d + 1]) + Math.abs(pix[o + 2] - pix[d + 2]) > 30) return false;
+    }
+    return true;
+  };
+  // Dải chèn thêm: mọi thứ nằm dưới hàng py (hình, khung, chữ) dịch xuống add điểm
+  const bands = [];
+  const mapY = (y) => { let a = 0; for (const t of bands) if (t.y < y) a += t.add; return y + a; };
+
+  // 3) Dàn chữ Việt:
+  //    - khối thân bài dài ra thì đẩy những khối NẰM NGAY DƯỚI nó (chồng nhau theo chiều
+  //      ngang) xuống;
+  //    - sắp chạm hình / khung / chữ không dịch bên dưới → chèn dải trống phía trên vật đó
+  //      (đẩy cả phần dưới trang xuống); không có chỗ cắt an toàn thì co chữ cho vừa;
+  //    - nhãn hình đứng yên tại chỗ (dời đi là lạc khỏi đường chỉ), chỉ nới sang chỗ trống.
   const meas = document.createElement('canvas').getContext('2d');
   entry.drawBoxes = null;
   const order = blocks.map((b, i) => i).sort((p, q) => blocks[p].top - blocks[q].top);
   const contentRight = Math.max(...blocks.map((b) => b.x + b.w));
-  // Chỗ trống bên phải một khối (tới khối kế bên cùng hàng, hoặc lề phải nội dung)
-  const roomRight = (b) => {
-    let r = contentRight;
-    for (const o of blocks) {
-      if (o === b || o.x < b.x + b.w - 1) continue;
-      if (Math.min(o.top + o.h, b.top + b.h) - Math.max(o.top, b.top) > 0) r = Math.min(r, o.x - 6);
-    }
-    return Math.max(b.w, r - b.x);
-  };
   const placed = [];
-  let grownBottom = Hp;
+  let grownBottom = 0;
+  const fixes = { bands: 0, squeezed: 0 }; // để biết trang nào phải né hình (dò lỗi)
   for (const i of order) {
     const b = blocks[i];
-    const vi = vis ? vis[i] : null;
-    const has = !!(vi && String(vi).trim());
-    b._draw = !has ? null
-      : b.label ? fitLabel(meas, vi, b)
-      : b.nLines === 1 ? fitOneLine(meas, vi, b, roomRight(b))
-      : fitBlock(meas, vi, b.w, b.fs, b.h, b.bold);
-    let shift = 0;
+    const vi = viOf(i);
+    b._bgc = sampleBgAround(bctx, b, S) || pageBg;
+    if (!vi) {
+      b._draw = null;
+      placed.push({ x: b.x, w: b.w, bottom: b.top + b.h, drawBottom: mapY(b.top + b.h), label: b.label, over: false });
+      continue;
+    }
+    const c = b._bgc;
+    if (b.label) {
+      const fl = freeSide(b, -1, c, 3 * b.w + 3 * b.fs), fr = freeSide(b, 1, c, 3 * b.w + 3 * b.fs);
+      const extra = b.align === 'right' ? fl : b.align === 'center' ? 2 * Math.min(fl, fr) : fr;
+      b._draw = fitLabel(meas, vi, b, b.w + Math.max(0, extra - 0.3 * b.fs));
+    } else if (b.nLines === 1) {
+      const fr = freeSide(b, 1, c, contentRight - (b.x + b.w) + 6);
+      b._draw = fitOneLine(meas, vi, b, b.w + Math.max(0, fr - 6));
+    } else {
+      b._draw = fitBlock(meas, vi, b.w, b.fs, b.h, b.bold);
+    }
+    let top = mapY(b.top);
     for (const p of placed) {
       if (p.bottom > b.top + 0.35 * b.fs) continue; // chỉ khối nằm TRÊN
       if (Math.min(p.x + p.w, b.x + b.w) - Math.max(p.x, b.x) <= 0) continue;
       if (!b.label) {
-        if (!p.label) shift = Math.max(shift, p.drawBottom - p.bottom);
-      } else if (!p.label && p.drawBottom > p.bottom) {
+        if (!p.label) top = Math.max(top, p.drawBottom + (b.top - p.bottom)); // giữ khoảng cách cũ
+      } else if (!p.label && p.over) {
         // Nhãn/chú thích nhỏ chỉ dời khi thật sự bị chữ phía trên tràn xuống đè lên
-        shift = Math.max(shift, p.drawBottom + 0.3 * b.fs - b.top);
+        top = Math.max(top, p.drawBottom + 0.3 * b.fs);
       }
     }
-    b._drawTop = b.top + shift;
-    const dh = b._draw ? Math.max(b.h, b._draw.needed) : b.h;
-    placed.push({ x: b.x, w: b.w, bottom: b.top + b.h, drawBottom: b._drawTop + dh, label: b.label });
-    grownBottom = Math.max(grownBottom, b._drawTop + dh);
+    let dh = Math.max(b.h, b._draw.needed);
+    if (!b.label && top + dh > mapY(b.top + b.h) + 0.5) {
+      // Chữ Việt tràn khỏi chỗ cũ: bên dưới có vướng gì không?
+      const y0 = b.top + b.h + 0.3 * b.fs;
+      const oy = inkBelow(b, y0, (y) => mapY(y) > top + dh + b.fs, c);
+      if (oy != null) {
+        const pad = Math.min(Math.max(oy - (b.top + b.h), 0.3 * b.fs), b.fs); // giữ khoảng hở cũ (≤ 1 cỡ chữ)
+        const need = top + dh + pad - mapY(oy);
+        if (need > 0.5) {
+          let cut = null;
+          for (let py = Math.floor(oy * S) - 2; py >= Math.ceil(y0 * S); py--) if (stretchable(py)) { cut = py; break; }
+          if (cut != null) {
+            const addPx = Math.ceil(need * S);
+            bands.push({ y: cut / S, py: cut, add: addPx / S, addPx });
+            fixes.bands++;
+          } else {
+            const sq = squeezeBlock(meas, vi, b, Math.max(b.h, mapY(oy) - pad - top));
+            if (sq && sq.needed < b._draw.needed) { b._draw = sq; dh = Math.max(b.h, sq.needed); }
+            fixes.squeezed++;
+          }
+        }
+      }
+    }
+    b._drawTop = top;
+    placed.push({ x: b.x, w: b.w, bottom: b.top + b.h, drawBottom: top + dh, label: b.label,
+      over: top + dh > mapY(b.top + b.h) + 0.5 });
+    grownBottom = Math.max(grownBottom, top + dh);
   }
-  const Hp2 = Math.max(Hp, grownBottom + Hp * 0.02);
-  // Vị trí THẬT của từng khối sau khi dàn lại (bản dịch dài đẩy khối xuống) —
-  // cần cho việc lấy chữ nằm dưới một vùng bôi ở chế độ Đè trang.
-  entry.drawBoxes = blocks.map((b) => ({
-    x: b.x, w: b.w, top: b._drawTop,
-    h: Math.max(b.h, b._draw ? b._draw.needed : b.h),
-  }));
+  const Hp2 = Math.max(mapY(Hp), grownBottom + Hp * 0.02);
+  entry.ovFixes = fixes;
+  // Vị trí THẬT của từng khối sau khi dàn lại (bản dịch dài đẩy khối xuống, dải chèn đẩy
+  // cả phần dưới) — cần cho việc lấy chữ nằm dưới một vùng bôi ở chế độ Đè trang.
+  for (const b of blocks) if (!b._draw) b._drawTop = mapY(b.top);
+  entry.drawBoxes = blocks.map((b) => (b._draw
+    ? { x: b.x, w: b.w, top: b._drawTop, h: Math.max(b.h, b._draw.needed) }
+    : { x: b.x, w: b.w, top: b._drawTop, h: mapY(b.top + b.h) - b._drawTop }));
 
-  // 3) canvas kết quả: nền giấy phủ kín (kể cả phần giãn thêm), rồi dán trang gốc
+  // 4) canvas kết quả: nền giấy phủ kín, rồi dán trang gốc theo từng dải — tại mỗi chỗ cắt,
+  //    hàng ảnh đó được kéo giãn thành khoảng trống (khung màu / đường kẻ dọc dài ra theo)
   const out = opts.canvas;
   out.width = Math.max(1, Math.round(Wp * S));
   out.height = Math.max(1, Math.round(Hp2 * S));
   out.style.width = (Wp * scale) + 'px';
   out.style.height = (Hp2 * scale) + 'px';
   const ctx = out.getContext('2d');
-  ctx.fillStyle = `rgb(${pageBg[0]},${pageBg[1]},${pageBg[2]})`;
+  ctx.fillStyle = rgbStr(pageBg);
   ctx.fillRect(0, 0, out.width, out.height);
-  ctx.drawImage(bg, 0, 0);
+  let sy = 0, off = 0;
+  for (const t of bands.slice().sort((p, q) => p.py - q.py)) {
+    if (t.py > sy) ctx.drawImage(bg, 0, sy, W, t.py - sy, 0, sy + off, W, t.py - sy);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(bg, 0, t.py, W, 1, 0, t.py + off, W, t.addPx);
+    ctx.imageSmoothingEnabled = true;
+    off += t.addPx;
+    sy = t.py;
+  }
+  if (H > sy) ctx.drawImage(bg, 0, sy, W, H - sy, 0, sy + off, W, H - sy);
 
-  // 4) che chữ Anh (tại vị trí GỐC) bằng màu nền cục bộ. Nhãn mà chữ Việt vẫn tràn
-  //    khỏi ô thì che luôn phần tràn, để chữ không đè lên nét vẽ.
+  // 5) che chữ Anh (tại vị trí GỐC, đã tính dải chèn) bằng màu nền cục bộ. Nhãn mà chữ Việt
+  //    vẫn tràn khỏi ô thì che luôn phần tràn, để chữ không đè lên nét vẽ.
   for (const b of blocks) {
     if (!b._draw) continue;
-    ctx.fillStyle = sampleBgAround(bctx, b, S) || `rgb(${pageBg[0]},${pageBg[1]},${pageBg[2]})`;
+    ctx.fillStyle = rgbStr(b._bgc);
     const h = b.label ? Math.max(b.h, b._draw.needed) : b.h;
     const w = b.label ? Math.max(b.w, b._draw.width || 0) : b.w;
     const x = !b.label ? b.x : b.align === 'right' ? b.x + b.w - w : b.align === 'center' ? b.x + (b.w - w) / 2 : b.x;
     // + phần đuôi chữ (g, p, y thò xuống dưới đường chân chữ ~ 0.3 cỡ chữ)
-    ctx.fillRect(Math.floor((x - 2) * S), Math.floor((b.top - 1) * S),
-      Math.ceil((w + 4) * S), Math.ceil((h + 1 + 0.3 * b.fs) * S));
+    const y0 = mapY(b.top - 1), y1 = mapY(b.top + h + 0.3 * b.fs);
+    ctx.fillRect(Math.floor((x - 2) * S), Math.floor(y0 * S), Math.ceil((w + 4) * S), Math.ceil((y1 - y0) * S));
   }
-  // 5) vẽ chữ Việt (tại vị trí đã dàn lại), giữ canh lề như bản gốc
+  // 6) vẽ chữ Việt (tại vị trí đã dàn lại), giữ canh lề như bản gốc
   ctx.textBaseline = 'top';
   ctx.fillStyle = '#14110E';
   for (const b of blocks) {
@@ -388,10 +512,10 @@ async function composeOverlay(entry, opts) {
     }
   }
   ctx.textAlign = 'left';
-  // 6) khi xuất PDF: vẽ luôn vệt bôi vào ảnh trang (trên màn hình đã có lớp DOM riêng)
+  // 7) khi xuất PDF: vẽ luôn vệt bôi vào ảnh trang (trên màn hình đã có lớp DOM riêng)
   if (opts.mode === 'export') paintRectsOnCanvas(ctx, entry.pageNum - 1, out.width, 'ov');
-  // 7) lớp chữ ẩn cho PDF: vị trí + bề rộng THẬT của từng dòng đang hiện trên ảnh
-  //    (chữ Việt đã dàn lại; khối chưa dịch thì là chữ gốc nằm nguyên chỗ trên ảnh)
+  // 8) lớp chữ ẩn cho PDF: vị trí + bề rộng THẬT của từng dòng đang hiện trên ảnh
+  //    (chữ Việt đã dàn lại; khối chưa dịch thì là chữ gốc trên ảnh, đã tính dải chèn)
   let runs = null;
   if (opts.textRuns) {
     runs = [];
@@ -407,8 +531,7 @@ async function composeOverlay(entry, opts) {
           y += b._draw.lh || f * OV_LINE;
         }
       } else if (b.lines) {
-        // chưa dịch: chữ gốc nằm nguyên trên ảnh → dùng đúng từng dòng gốc
-        for (const l of b.lines) if (l.text.trim()) runs.push({ x: l.x, top: l.top, f: l.fs, w: l.w, text: l.text });
+        for (const l of b.lines) if (l.text.trim()) runs.push({ x: l.x, top: mapY(l.top), f: l.fs, w: l.w, text: l.text });
       }
     }
   }
