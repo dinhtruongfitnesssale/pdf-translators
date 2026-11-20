@@ -322,6 +322,50 @@
     </div>
   </div>
 
+  <!-- Modal xuất PDF "Đè trang": khoảng trang / chương, chất lượng ảnh, lớp chữ tìm được -->
+  <div id="exportModal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="exportTitle">
+      <span class="eyebrow">TẢI PDF ĐÈ TRANG</span>
+      <h2 id="exportTitle">Xuất file PDF</h2>
+      <p class="modal-sub">Tài liệu có <b id="exTotal">—</b> trang. Sách dày nên xuất từng chương cho file nhẹ, xuất nhanh.</p>
+
+      <label class="field ex-chapter" id="exChapterWrap" hidden>
+        <span>Chọn nhanh theo chương</span>
+        <select id="exChapter"></select>
+      </label>
+
+      <div class="modal-range">
+        <label class="field">
+          <span>Trang bắt đầu</span>
+          <input id="exFrom" type="number" min="1" step="1" value="1" />
+        </label>
+        <span class="rangedash">«→»</span>
+        <label class="field">
+          <span>Trang kết thúc</span>
+          <input id="exTo" type="number" min="1" step="1" />
+        </label>
+      </div>
+
+      <div class="bk-opts" role="radiogroup" aria-label="Chất lượng ảnh trang">
+        <label class="check"><input type="radio" name="exQuality" value="hi" /> <span><b>Nét</b> — đẹp nhất, hợp để in</span></label>
+        <label class="check"><input type="radio" name="exQuality" value="mid" checked /> <span><b>Vừa</b> — đọc trên máy tính rất rõ</span></label>
+        <label class="check"><input type="radio" name="exQuality" value="lo" /> <span><b>Nhẹ</b> — file nhỏ nhất, hợp gửi qua Zalo / đọc trên điện thoại</span></label>
+      </div>
+      <div class="bk-opts">
+        <label class="check">
+          <input id="exText" type="checkbox" checked /> <span>Kèm lớp chữ ẩn — tìm chữ (Ctrl+F) và copy được trong file PDF</span>
+        </label>
+      </div>
+
+      <p id="exHint" class="modal-hint"></p>
+
+      <div class="modal-actions">
+        <button id="exCancel" class="btn" type="button">Hủy</button>
+        <button id="exGo" class="btn btn-primary" type="button">Tải PDF</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal sao lưu: chọn nội dung muốn xuất ra file -->
   <div id="backupModal" class="modal-overlay" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="backupTitle">
@@ -379,6 +423,8 @@
   <script defer src="/js/translate.js"></script>
   <script defer src="/js/events.js"></script>
   <script defer src="/js/overlay.js"></script>
+  <script defer src="/js/pdf-writer.js"></script>
+  <script defer src="/js/overlay-export.js"></script>
   <script defer src="/js/note-store.js"></script>
   <script defer src="/js/bookmarks.js"></script>
   <script defer src="/js/highlights.js"></script>

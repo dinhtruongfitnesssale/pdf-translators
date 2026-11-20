@@ -145,7 +145,12 @@ async function runTranslate(list) {
 
 // ---------- Export PDF ----------
 async function exportPdf() {
-  if (viewMode === 'overlay') return exportOverlayPdf();
+  if (viewMode === 'overlay') {
+    // đang xuất → nút này là "Dừng xuất"; không thì mở hộp chọn trang / chất lượng
+    if (EX_RUN) stopOverlayExport();
+    else openOverlayExportModal();
+    return;
+  }
   if (!pages.length) return;
   const payload = {
     title: docTitle + ' — bản dịch',

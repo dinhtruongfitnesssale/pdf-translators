@@ -61,6 +61,17 @@ const rangeAllEl = $('rangeAll');
 const modalHintEl = $('modalHint');
 const modalGoBtn = $('modalGo');
 const modalCancelBtn = $('modalCancel');
+// Xuất PDF Đè trang
+const exportModalEl = $('exportModal');
+const exTotalEl = $('exTotal');
+const exChapterWrap = $('exChapterWrap');
+const exChapterEl = $('exChapter');
+const exFromEl = $('exFrom');
+const exToEl = $('exTo');
+const exTextEl = $('exText');
+const exHintEl = $('exHint');
+const exGoBtn = $('exGo');
+const exCancelBtn = $('exCancel');
 // Sao lưu / khôi phục
 const backupBtn = $('backupBtn');
 const restoreBtn = $('restoreBtn');

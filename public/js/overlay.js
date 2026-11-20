@@ -155,6 +155,8 @@ async function extractBlocks(page) {
       // Chữ nhỏ hơn hẳn thân bài = nhãn hình / chú thích / chân trang: giữ nguyên chỗ,
       // không đẩy khối khác, co chữ nhiều hơn cho vừa ô.
       label, nLines: ls.length,
+      // vị trí từng dòng gốc — để đặt lớp chữ ẩn đúng chỗ khi trang chưa dịch
+      lines: ls.map((l) => ({ x: l.x, top: l.top, w: l.right - l.x, fs: l.fs, text: l.text })),
       text: ls.map((l) => l.text).join(' ').replace(/\s+/g, ' ').trim(),
     };
   });
@@ -283,7 +285,8 @@ async function composeOverlay(entry, opts) {
   const vis = entry.translated;
 
   let cssW, dpr;
-  if (opts.mode === 'export') { cssW = Wp; dpr = Math.min(3, Math.max(2, 1600 / Wp)); }
+  // Xuất PDF: ảnh trang rộng exportPx điểm ảnh (chọn theo chất lượng), mặc định 1600
+  if (opts.mode === 'export') { cssW = Wp; dpr = Math.min(4, Math.max(1, (opts.exportPx || 1600) / Wp)); }
   else { cssW = opts.cssW; dpr = Math.min(window.devicePixelRatio || 1, 2); }
   const scale = cssW / Wp;   // điểm → css px
   const S = scale * dpr;     // điểm → px thiết bị
@@ -387,7 +390,29 @@ async function composeOverlay(entry, opts) {
   ctx.textAlign = 'left';
   // 6) khi xuất PDF: vẽ luôn vệt bôi vào ảnh trang (trên màn hình đã có lớp DOM riêng)
   if (opts.mode === 'export') paintRectsOnCanvas(ctx, entry.pageNum - 1, out.width, 'ov');
-  return { wPt: Wp, hPt: Hp2 };
+  // 7) lớp chữ ẩn cho PDF: vị trí + bề rộng THẬT của từng dòng đang hiện trên ảnh
+  //    (chữ Việt đã dàn lại; khối chưa dịch thì là chữ gốc nằm nguyên chỗ trên ảnh)
+  let runs = null;
+  if (opts.textRuns) {
+    runs = [];
+    for (const b of blocks) {
+      if (b._draw) {
+        const f = b._draw.f;
+        meas.font = `${b.bold ? 600 : 400} ${f}px ${OV_FONT}`;
+        let y = b._drawTop;
+        for (const line of b._draw.lines) {
+          const w = meas.measureText(line).width;
+          const x = b.align === 'right' ? b.x + b.w - w : b.align === 'center' ? b.x + (b.w - w) / 2 : b.x;
+          if (line.trim()) runs.push({ x, top: y, f, w, text: line });
+          y += b._draw.lh || f * OV_LINE;
+        }
+      } else if (b.lines) {
+        // chưa dịch: chữ gốc nằm nguyên trên ảnh → dùng đúng từng dòng gốc
+        for (const l of b.lines) if (l.text.trim()) runs.push({ x: l.x, top: l.top, f: l.fs, w: l.w, text: l.text });
+      }
+    }
+  }
+  return { wPt: Wp, hPt: Hp2, runs };
 }
 
 // ---------- Dựng mặt phẳng "Đè trang" ----------
@@ -693,95 +718,5 @@ async function runOverlayTranslate(list) {
   } else {
     setStatus(`Đã dịch xong ${list.length} trang (Đè trang)` +
       (skipped ? `: ${fresh} trang mới, ${skipped} trang đã có sẵn.` : '.'), 'done');
-  }
-}
-
-// ---------- Xuất PDF Đè trang (mỗi trang là 1 ảnh đã ghép, đúng khổ) ----------
-// Ghép PDF ngay trong trình duyệt: mỗi trang là một ảnh JPEG (bộ lọc DCTDecode của PDF
-// đọc thẳng JPEG, khỏi giải nén). Không gửi ảnh lên máy chủ nữa → không vướng giới hạn
-// dung lượng request (máy chủ cục bộ 60MB, Vercel 4,5MB), xuất được cả cuốn sách.
-// pages: [{ jpeg: Blob, pxW, pxH, w, h }] — w/h tính bằng điểm (1/72 inch)
-function buildImagePdf(pages, title) {
-  const enc = new TextEncoder();
-  const parts = [];
-  const offsets = [];
-  let offset = 0;
-  const push = (x) => {
-    const b = typeof x === 'string' ? enc.encode(x) : x;
-    parts.push(b);
-    offset += b instanceof Blob ? b.size : b.length;
-  };
-  const num = (v) => (Math.round(v * 100) / 100).toString();
-  const obj = (n, write) => { offsets[n] = offset; push(`${n} 0 obj\n`); write(); push('\nendobj\n'); };
-  const n = pages.length;
-  const pageObj = (i) => 3 + i * 3, contObj = (i) => 4 + i * 3, imgObj = (i) => 5 + i * 3;
-  const infoObj = 3 + n * 3;
-
-  push(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a])); // %PDF-1.4 + dòng nhị phân
-  obj(1, () => push('<< /Type /Catalog /Pages 2 0 R >>'));
-  obj(2, () => push(`<< /Type /Pages /Count ${n} /Kids [${pages.map((_, i) => `${pageObj(i)} 0 R`).join(' ')}] >>`));
-  pages.forEach((p, i) => {
-    obj(pageObj(i), () => push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(p.w)} ${num(p.h)}] ` +
-      `/Resources << /XObject << /Im0 ${imgObj(i)} 0 R >> >> /Contents ${contObj(i)} 0 R >>`));
-    const cs = `q ${num(p.w)} 0 0 ${num(p.h)} 0 0 cm /Im0 Do Q`;
-    obj(contObj(i), () => push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`));
-    obj(imgObj(i), () => {
-      push(`<< /Type /XObject /Subtype /Image /Width ${p.pxW} /Height ${p.pxH} /ColorSpace /DeviceRGB ` +
-        `/BitsPerComponent 8 /Filter /DCTDecode /Length ${p.jpeg.size} >>\nstream\n`);
-      push(p.jpeg);
-      push('\nendstream');
-    });
-  });
-  // Tiêu đề tài liệu: chuỗi UTF-16BE dạng hex (đúng chuẩn cho chữ có dấu)
-  let hex = 'FEFF';
-  for (const ch of String(title || '')) {
-    const cp = ch.codePointAt(0);
-    const units = cp > 0xffff ? [0xd800 + ((cp - 0x10000) >> 10), 0xdc00 + ((cp - 0x10000) & 0x3ff)] : [cp];
-    for (const u of units) hex += u.toString(16).toUpperCase().padStart(4, '0');
-  }
-  obj(infoObj, () => push(`<< /Title <${hex}> /Producer (PDF Translator) >>`));
-  const xrefAt = offset;
-  let xref = `xref\n0 ${infoObj + 1}\n0000000000 65535 f \n`;
-  for (let k = 1; k <= infoObj; k++) xref += String(offsets[k]).padStart(10, '0') + ' 00000 n \n';
-  push(xref);
-  push(`trailer\n<< /Size ${infoObj + 1} /Root 1 0 R /Info ${infoObj} 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`);
-  return new Blob(parts, { type: 'application/pdf' });
-}
-
-const canvasToJpeg = (cnv, q) => new Promise((res, rej) =>
-  cnv.toBlob((b) => (b ? res(b) : rej(new Error('Không tạo được ảnh trang'))), 'image/jpeg', q));
-
-async function exportOverlayPdf() {
-  if (!pdfDoc || !overlayPages.length) { setStatus('Chưa có trang để xuất.', 'error'); return; }
-  setStatus('Đang tạo PDF đè trang…', 'working');
-  exportBtn.disabled = true;
-  try {
-    await ensureFontsReady();
-    await overlayHydrated; // để trang đã dịch từ phiên trước cũng có mặt trong file
-    const out = [];
-    const cnv = document.createElement('canvas');
-    const t0 = Date.now();
-    for (let i = 0; i < overlayPages.length; i++) {
-      const eta = i ? ` · còn khoảng ${fmtDuration(((Date.now() - t0) / 1000 / i) * (overlayPages.length - i))}` : '';
-      setStatus(`Đang dựng trang ${i + 1}/${overlayPages.length}${eta}…`, 'working');
-      const dims = await composeOverlay(overlayPages[i], { canvas: cnv, mode: 'export' });
-      out.push({ jpeg: await canvasToJpeg(cnv, 0.85), pxW: cnv.width, pxH: cnv.height, w: dims.wPt, h: dims.hPt });
-    }
-    setStatus('Đang ghép file PDF…', 'working');
-    const blob = buildImagePdf(out, docTitle + ' — đè trang');
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = (docTitle || 'ban-dich') + ' - de trang.pdf';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000); // file lớn: chờ trình duyệt tải xong mới thu hồi
-    const done = overlayPages.filter((e) => e.translated).length;
-    setStatus(`Đã tạo PDF đè trang (${overlayPages.length} trang, ${done} trang có bản dịch, ${fmtSize(blob.size)}).`, 'done');
-  } catch (err) {
-    setStatus('Lỗi tạo PDF: ' + err.message, 'error');
-  } finally {
-    exportBtn.disabled = false;
   }
 }
