@@ -360,6 +360,33 @@
     </div>
   </div>
 
-  <script type="module" src="/app.js"></script>
+  <!-- pdf.js chỉ có bản ES module: nạp trước, đưa ra window.pdfjsLib.
+       Các file còn lại là script thường (defer) dùng chung phạm vi toàn cục và
+       chạy ĐÚNG thứ tự dưới đây (module và defer cùng chạy theo thứ tự trong trang).
+       Thêm file mới thì đặt sau những file mà nó cần lúc nạp; main.js luôn ở cuối. -->
+  <script type="module" src="/js/pdf-setup.mjs"></script>
+  <script defer src="/js/core.js"></script>
+  <script defer src="/js/dialogs.js"></script>
+  <script defer src="/js/model-menu.js"></script>
+  <script defer src="/js/blocks.js"></script>
+  <script defer src="/js/library.js"></script>
+  <script defer src="/js/backup.js"></script>
+  <script defer src="/js/navigation.js"></script>
+  <script defer src="/js/render.js"></script>
+  <script defer src="/js/book-view.js"></script>
+  <script defer src="/js/document.js"></script>
+  <script defer src="/js/pdf-extract.js"></script>
+  <script defer src="/js/translate.js"></script>
+  <script defer src="/js/events.js"></script>
+  <script defer src="/js/overlay.js"></script>
+  <script defer src="/js/note-store.js"></script>
+  <script defer src="/js/bookmarks.js"></script>
+  <script defer src="/js/highlights.js"></script>
+  <script defer src="/js/drawer.js"></script>
+  <script defer src="/js/notes.js"></script>
+  <script defer src="/js/find.js"></script>
+  <script defer src="/js/study-events.js"></script>
+  <script defer src="/js/pomodoro.js"></script>
+  <script defer src="/js/main.js"></script>
 </body>
 </html>

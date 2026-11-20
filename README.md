@@ -58,6 +58,10 @@ Hoặc bằng CLI: `npm i -g vercel` rồi `vercel` trong thư mục dự án.
 - pdf.js được chép sẵn vào `public/vendor/pdfjs` (phục vụ tĩnh, không cần đọc `node_modules` lúc chạy).
 - Font xuất PDF: `fonts/BeVietnamPro-*.ttf` (giấy phép OFL — tự do phát hành).
 - Sửa quy tắc dịch/bảng thuật ngữ: `prompts.js`.
+- Code giao diện nằm trong `public/js/`, mỗi file một tính năng (`find.js`, `notes.js`, `pomodoro.js`, `overlay.js`…).
+  Đây là **script thường** dùng chung phạm vi toàn cục (không import/export), nạp theo thứ tự trong `index.html`;
+  `pdf-setup.mjs` nạp pdf.js trước, `main.js` khởi động app sau cùng. Thêm file mới thì đặt thẻ `<script defer>`
+  sau những file mà nó cần ngay lúc nạp (ví dụ gắn `addEventListener(..., tenHam)` thì `tenHam` phải có trước).
 - Bookmark + highlight + ghi chú của mỗi tài liệu nằm chung một khoá `ptr.note.<docId>` trong localStorage,
   nằm trong file **Sao lưu** và bị dọn khi gỡ tài liệu khỏi Thư viện.
   Highlight ở cột bản dịch lưu theo **vị trí ký tự** kèm đoạn chữ gốc để tự neo lại khi bạn sửa bản dịch —
