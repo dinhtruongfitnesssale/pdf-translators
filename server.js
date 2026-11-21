@@ -191,15 +191,35 @@ async function translateClaude({ apiKey, model, system, text }) {
   return out;
 }
 
+// Google quá tải ("high demand" / "overloaded", HTTP 503/500) — lỗi phía máy chủ của Google,
+// không phải do key hết hạn mức.
+const GEMINI_BUSY_FALLBACK = 'gemini-3.5-flash-lite';
+const isGeminiBusy = (e) => [500, 503].includes(e?.status) ||
+  /overloaded|high demand|UNAVAILABLE|try again later/i.test(e?.message || '');
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function translateGemini({ apiKey, model, system, text }) {
   const m = resolveGeminiModel(model);
   try {
-    return await callGemini({ apiKey, model: m, system, text });
+    // Quá tải thường chỉ vài giây: thử lại 2 lần (chờ 1,5s rồi 3s) trước khi bỏ cuộc.
+    for (let i = 0; ; i++) {
+      try { return await callGemini({ apiKey, model: m, system, text }); }
+      catch (e) {
+        if (!isGeminiBusy(e) || i >= 2) throw e;
+        await wait(1500 * (i + 1));
+      }
+    }
   } catch (e) {
     // Model bị Google gỡ giữa chừng: thử lại một lần bằng model mặc định còn sống.
     if (e?.status === 404 && m !== GEMINI_DEFAULT_MODEL) {
       const out = await callGemini({ apiKey, model: GEMINI_DEFAULT_MODEL, system, text });
       console.warn(`[gemini] "${m}" không còn khả dụng — đã dịch bằng "${GEMINI_DEFAULT_MODEL}".`);
+      return out;
+    }
+    // Vẫn quá tải: chuyển sang model nhẹ (ít người tranh hơn) cho lượt này.
+    if (isGeminiBusy(e) && m !== GEMINI_BUSY_FALLBACK) {
+      const out = await callGemini({ apiKey, model: GEMINI_BUSY_FALLBACK, system, text });
+      console.warn(`[gemini] "${m}" đang quá tải — đã dịch bằng "${GEMINI_BUSY_FALLBACK}".`);
       return out;
     }
     throw e;
@@ -243,6 +263,10 @@ function normalizeError(err) {
   }
   if (s === 429 || /rate limit|quota|RESOURCE_EXHAUSTED/i.test(msg)) {
     return 'Vượt giới hạn lượt gọi (rate limit / quota). Đợi một chút rồi thử lại.';
+  }
+  if (err?.provider !== 'claude' && isGeminiBusy(err)) {
+    return 'Máy chủ Gemini của Google đang quá tải (không phải do key của bạn hết lượt). ' +
+      'App đã tự thử lại mà chưa được — đợi 1–2 phút rồi bấm dịch tiếp, hoặc tạm chuyển sang Claude.';
   }
   if (s === 404 || /not found|not supported|NOT_FOUND|is not found for API version/i.test(msg)) {
     if (err?.provider === 'claude') {
