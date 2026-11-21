@@ -110,6 +110,15 @@ body {
   outline: none;
 }
 .field input:focus, .field select:focus { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(181,101,30,0.14); }
+/* Nút "Giữ nguyên…" cao bằng các ô nhập bên cạnh */
+.keep-btn { padding: 8px 12px; font-size: 14px; white-space: nowrap; }
+.keep-field { margin-top: 6px; }
+.keep-field textarea {
+  font-family: var(--sans); font-size: 14px; color: var(--ink); background: #fff9;
+  border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; outline: none;
+  resize: vertical; min-height: 120px; width: 100%; box-sizing: border-box;
+}
+.keep-field textarea:focus { border-color: var(--amber); box-shadow: 0 0 0 2px rgba(181,101,30,0.14); }
 
 /* Ô Model: hộp chọn tự làm (datalist của trình duyệt lọc theo chữ đang gõ nên
    bấm mũi tên thường không hiện gì) */

@@ -33,6 +33,7 @@ async function translateOne(entry, force = false) {
         model: modelEl.value.trim(),
         skill: skillEl.value,
         text: sourceText,
+        ...keepPayload(),
       }),
     });
     const data = await r.json();

@@ -63,6 +63,10 @@ const modalGoBtn = $('modalGo');
 const modalCancelBtn = $('modalCancel');
 // Xuất PDF Đè trang
 const exportModalEl = $('exportModal');
+// Hộp "Giữ nguyên…" (thuật ngữ không dịch) — keep-terms.js
+const keepModalEl = $('keepModal');
+const keepBtn = $('keepBtn'), keepSciEl = $('keepSci'), keepTermsEl = $('keepTerms'), keepHintEl = $('keepHint');
+const keepOkBtn = $('keepOk'), keepCancelBtn = $('keepCancel');
 const exTotalEl = $('exTotal');
 const exChapterWrap = $('exChapterWrap');
 const exChapterEl = $('exChapter');

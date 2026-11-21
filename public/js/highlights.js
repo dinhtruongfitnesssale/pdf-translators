@@ -226,9 +226,10 @@ function paintRectsOnCanvas(ctx, p, widthPx, surface) {
 // Khối chữ của một trang (dùng lại bộ trích khối của chế độ Đè trang), có nhớ đệm
 async function pageBlocksExt(p) {
   const e = pages[p], ov = overlayPages[p];
-  if (e && e.ext) return e.ext;
-  if (ov && ov.ext) return ov.ext;
   if (!pdfDoc) return null;
+  // Đè trang: cùng cách chia khối với bản dịch đang hiện (trang dịch theo cách chia cũ vẫn giữ cũ)
+  if (ov) { try { return await overlayExt(ov); } catch { return null; } }
+  if (e && e.ext) return e.ext;
   try {
     const ext = await extractBlocks(await pdfDoc.getPage(p + 1));
     if (e) e.ext = ext;

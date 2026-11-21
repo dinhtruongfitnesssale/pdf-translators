@@ -250,14 +250,42 @@ function buildNotesSystemPrompt(skillKey) {
   return `${skill.body}\n\n${NOTES_INSTRUCTIONS}`;
 }
 
-function buildSystemPrompt(skillKey) {
-  const skill = SKILLS[skillKey] || SKILLS.fitness;
-  return `${skill.body}\n\n${APP_INSTRUCTIONS}`;
+// Nút "Giữ nguyên…" trong app: tên khoa học / đơn vị / ký hiệu (bật sẵn) + danh sách người dùng.
+// Đặt SAU các quy tắc dịch để được ưu tiên khi mâu thuẫn với bảng thuật ngữ của hồ sơ dịch.
+function cleanKeepTerms(list) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set(), out = [];
+  for (const raw of list) {
+    const t = String(raw == null ? '' : raw).replace(/[\r\n"“”]+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!t || t.length > 80 || seen.has(t.toLowerCase())) continue;
+    seen.add(t.toLowerCase());
+    out.push(t);
+    if (out.length >= 300) break;
+  }
+  return out;
+}
+function buildKeepRules(keepSci, keepTerms) {
+  const terms = cleanKeepTerms(keepTerms);
+  const rules = [];
+  if (keepSci !== false) {
+    rules.push('- Giữ nguyên đúng như bản gốc: tên khoa học Latin (vd. Lactobacillus acidophilus, Homo sapiens); đơn vị đo và ký hiệu (µg, mcg, mg, g, kcal, kJ, IU, oz, c, mL, mmol/L, %); ký hiệu và công thức hoá học (Na+, CO2, H2O, Fe2+); tên viết tắt của chất, enzyme, gene, hormone, thụ thể (ATP, NADH, mTOR, GLUT4, PYY, CCK, MC4). Mọi con số giữ nguyên.');
+  }
+  if (terms.length) {
+    rules.push('- Các từ/cụm sau LUÔN giữ nguyên tiếng Anh, viết đúng như danh sách, kể cả khi nằm giữa câu (phần còn lại của câu vẫn dịch bình thường, không thêm chú thích tiếng Việt cho chúng): ' +
+      terms.map((t) => `"${t}"`).join('; ') + '.');
+  }
+  if (!rules.length) return '';
+  return `\n\n--- GIỮ NGUYÊN, KHÔNG DỊCH (ưu tiên hơn bảng thuật ngữ ở trên nếu mâu thuẫn) ---\n${rules.join('\n')}`;
 }
 
-function buildBlocksSystemPrompt(skillKey) {
+function buildSystemPrompt(skillKey, keep = {}) {
   const skill = SKILLS[skillKey] || SKILLS.fitness;
-  return `${skill.body}\n\n${BLOCKS_INSTRUCTIONS}`;
+  return `${skill.body}\n\n${APP_INSTRUCTIONS}${buildKeepRules(keep.keepSci, keep.keepTerms)}`;
 }
 
-module.exports = { SKILLS, buildSystemPrompt, buildBlocksSystemPrompt, buildNotesSystemPrompt };
+function buildBlocksSystemPrompt(skillKey, keep = {}) {
+  const skill = SKILLS[skillKey] || SKILLS.fitness;
+  return `${skill.body}\n\n${BLOCKS_INSTRUCTIONS}${buildKeepRules(keep.keepSci, keep.keepTerms)}`;
+}
+
+module.exports = { SKILLS, buildSystemPrompt, buildBlocksSystemPrompt, buildNotesSystemPrompt, buildKeepRules };

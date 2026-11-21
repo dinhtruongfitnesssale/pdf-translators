@@ -56,6 +56,11 @@
         <select id="skill"></select>
       </label>
 
+      <div class="field">
+        <span>Thuật ngữ</span>
+        <button id="keepBtn" class="btn keep-btn" type="button" title="Tên khoa học, đơn vị, từ chuyên môn… luôn giữ nguyên, không dịch">Giữ nguyên…</button>
+      </div>
+
       <label class="check" title="Lưu key trong trình duyệt máy này">
         <input id="rememberKey" type="checkbox" /> <span>Ghi nhớ key</span>
       </label>
@@ -366,6 +371,30 @@
     </div>
   </div>
 
+  <!-- Modal thuật ngữ giữ nguyên (không dịch) -->
+  <div id="keepModal" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="keepTitle">
+      <span class="eyebrow">THUẬT NGỮ</span>
+      <h2 id="keepTitle">Giữ nguyên, không dịch</h2>
+      <p class="modal-sub">Áp dụng cho những lần dịch tiếp theo (cả Song ngữ lẫn Đè trang). Trang đã dịch rồi thì bấm “Dịch lại” để áp dụng.</p>
+      <div class="bk-opts">
+        <label class="check">
+          <input id="keepSci" type="checkbox" checked />
+          <span>Tên khoa học (Latin), đơn vị đo (µg, mg, kcal, IU, oz…), ký hiệu &amp; công thức hoá học (Na⁺, CO₂…), tên viết tắt (ATP, mTOR, GLUT4…)</span>
+        </label>
+      </div>
+      <label class="field keep-field">
+        <span>Từ / cụm luôn giữ nguyên — mỗi dòng một mục, hoặc cách nhau bằng dấu phẩy</span>
+        <textarea id="keepTerms" rows="7" spellcheck="false" placeholder="Ví dụ:&#10;whey protein&#10;Molybdenum&#10;Beef liver"></textarea>
+      </label>
+      <p id="keepHint" class="modal-hint"></p>
+      <div class="modal-actions">
+        <button id="keepCancel" class="btn" type="button">Hủy</button>
+        <button id="keepOk" class="btn btn-primary" type="button" title="Ctrl+Enter">Lưu</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal sao lưu: chọn nội dung muốn xuất ra file -->
   <div id="backupModal" class="modal-overlay" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="backupTitle">
@@ -412,6 +441,7 @@
   <script defer src="/js/core.js"></script>
   <script defer src="/js/dialogs.js"></script>
   <script defer src="/js/model-menu.js"></script>
+  <script defer src="/js/keep-terms.js"></script>
   <script defer src="/js/blocks.js"></script>
   <script defer src="/js/library.js"></script>
   <script defer src="/js/backup.js"></script>

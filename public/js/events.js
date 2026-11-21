@@ -112,9 +112,9 @@ bookStage.addEventListener('click', (e) => {
   if (e.clientX - r.left < r.width / 2) bookGo(-1); else bookGo(1);
 });
 document.addEventListener('keydown', (e) => {
-  if (readMode !== 'book' || !modalEl.hidden || !backupModalEl.hidden || !confirmEl.hidden) return;
+  if (readMode !== 'book' || !modalEl.hidden || !backupModalEl.hidden || !confirmEl.hidden || !keepModalEl.hidden) return;
   const ae = document.activeElement;
-  if (ae && (ae.tagName === 'INPUT' || ae.isContentEditable)) return;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
   if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); bookGo(1); }
   else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); bookGo(-1); }
 });

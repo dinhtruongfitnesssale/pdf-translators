@@ -31,7 +31,14 @@ const medNum = (arr) => {
 };
 
 // --- Trích KHỐI đoạn (giữ toạ độ) từ một trang PDF, hệ toạ độ điểm, gốc trên-trái ---
-async function extractBlocks(page) {
+// Ô số liệu của bảng: chỉ có số, dấu và đơn vị ("104", "0.9 mg", "25–30 %", "<1", "2,500 IU")
+function isNumCell(t) {
+  const s = t.replace(/(µg|μg|mcg|mg|kg|kcal|kJ|cal|IU|oz|mL|ml|mmol|mEq|RAE|DFE|g|L)(?![A-Za-z])/g, '');
+  return s.length <= 24 && /\d/.test(s) && !/[A-Za-z]/.test(s);
+}
+// legacy = cách chia khối cũ (trước khi tách hàng bảng / bỏ dấu cách lạc giữa cột): chỉ dùng
+// để giữ những bản dịch Đè trang đã lưu theo cách chia đó (xem overlayExt).
+async function extractBlocks(page, legacy = false) {
   const tc = await page.getTextContent();
   const vp = page.getViewport({ scale: 1 });
   const Wp = vp.width, Hp = vp.height;
@@ -45,7 +52,7 @@ async function extractBlocks(page) {
     const top = Hp - yb - fs;                 // đổi sang gốc trên
     items.push({ x, top, bottom: top + fs, w, fs, str: it.str });
   }
-  if (!items.length) return { blocks: [], Wp, Hp };
+  if (!items.length) return { blocks: [], Wp, Hp, legacy };
   // Cỡ chữ THÂN BÀI = cỡ chiếm nhiều ký tự nhất (nhãn hình / chú thích nhỏ hơn hẳn)
   const fsChars = new Map();
   for (const it of items) {
@@ -90,14 +97,16 @@ async function extractBlocks(page) {
     for (const it of arr) { const k = it.fs; m.set(k, (m.get(k) || 0) + it.str.trim().length); }
     const fs = [...m.entries()].sort((a, b) => b[1] - a[1])[0][0];
     frags.push({ text, x: Math.min(...arr.map((i) => i.x)), right: Math.max(...arr.map((i) => i.x + i.w)),
-      top: Math.min(...arr.map((i) => i.top)), bottom: Math.max(...arr.map((i) => i.bottom)), fs });
+      top: Math.min(...arr.map((i) => i.top)), bottom: Math.max(...arr.map((i) => i.bottom)), fs,
+      num: isNumCell(text) });
   };
   for (const row of rows) {
+    const rowStart = frags.length;
     const its = row.items.filter((i) => i.str.trim() || i.w > 0).sort((a, b) => a.x - b.x);
     let cur = [], curR = -Infinity;
     for (const it of its) {
       const gapMax = 0.9 * Math.min(it.fs, cur.length ? cur[cur.length - 1].fs : it.fs);
-      if (cur.length && it.x - curR > gapMax) {
+      if (cur.length && it.x - curR > gapMax && (it.str.trim() || !legacy)) {
         // Dấu cách lạc từ cột bên cạnh (vd. sau chữ "MC4" của cột phải) — bỏ, đừng để nó
         // nối dòng cột trái sang tận cột phải
         if (!it.str.trim()) continue;
@@ -107,6 +116,16 @@ async function extractBlocks(page) {
       curR = Math.max(curR, it.x + it.w);
     }
     if (cur.length) makeFrag(cur);
+    // Hàng của BẢNG: cạnh dòng chữ có một ô số liệu ("104", "0.9 mg", "25–30 %") cùng hàng.
+    // Đánh dấu để bước 3 không gom các hàng bảng thành một đoạn văn (dịch xong sẽ chảy
+    // chữ tự do, lệch hết khỏi hàng số liệu).
+    const sib = frags.slice(rowStart);
+    if (!legacy && sib.length > 1) {
+      for (const f of sib) {
+        const others = sib.filter((o) => o !== f);
+        f.cell = others.some((o) => o.num) || (f.num && others.length > 0);
+      }
+    }
   }
 
   // 3) Khối: nối đoạn dòng vào khối có dòng cuối nằm NGAY TRÊN, chồng nhau theo chiều
@@ -122,6 +141,11 @@ async function extractBlocks(page) {
       if (Math.abs(f.fs - L.fs) > 0.25 * Math.min(f.fs, L.fs)) continue;
       const ov = Math.min(f.right, g.right) - Math.max(f.x, g.x);
       if (ov < 0.5 * Math.min(f.right - f.x, g.right - g.x)) continue;
+      // Bảng số liệu: hai hàng → hai ô riêng; tiêu đề nhóm (thụt ra trái) và hàng đầu tiên
+      // dưới tiêu đề (thụt vào) cũng tách. Dòng xuống dòng trong cùng một ô thì vẫn gom.
+      if (f.cell && g.cell) continue;
+      if (g.cell && f.x < L.x - 1) continue;
+      if (f.cell && f.x > L.x + 1) continue;
       // Cách xa hơn hẳn nhịp dòng của chính khối → nhãn / đoạn khác đặt sát bên dưới
       if (g.lines.length >= 2 && gap > g.gap + 0.5 * f.fs) continue;
       // Thụt đầu dòng ngay sau một dòng ngắn = đầu đoạn mới
@@ -133,7 +157,8 @@ async function extractBlocks(page) {
       best.lines.push(f);
       best.x = Math.min(best.x, f.x);
       best.right = Math.max(best.right, f.right);
-    } else groups.push({ lines: [f], x: f.x, right: f.right, gap: 0 });
+      best.cell = best.cell || !!f.cell;
+    } else groups.push({ lines: [f], x: f.x, right: f.right, gap: 0, cell: !!f.cell });
   }
 
   const blocks = groups.map((g) => {
@@ -165,7 +190,7 @@ async function extractBlocks(page) {
       text: ls.map((l) => l.text).join(' ').replace(/\s+/g, ' ').trim(),
     };
   });
-  return { blocks: blocks.filter((b) => b.text && b.w >= 4), Wp, Hp };
+  return { blocks: blocks.filter((b) => b.text && b.w >= 4), Wp, Hp, legacy };
 }
 
 // --- Đo & bẻ dòng chữ Việt cho vừa bề rộng khối ---
@@ -292,10 +317,24 @@ function hashBlocks(blocks) {
   return blocks.length + '#' + blocks.map((b) => b.text.length).join('.');
 }
 
+// Khối chữ của một trang ở chế độ Đè trang (có nhớ đệm). Trang đã dịch theo cách chia khối
+// CŨ thì dùng lại cách chia cũ — giữ bản dịch đã trả tiền thay vì bắt dịch lại; bấm
+// "Dịch lại" trên trang đó để chuyển sang cách chia mới.
+async function overlayExt(entry, page) {
+  if (entry.ext) return entry.ext;
+  page = page || await pdfDoc.getPage(entry.pageNum);
+  let ext = await extractBlocks(page);
+  if (entry.translated && entry.trHash && entry.trHash !== hashBlocks(ext.blocks)) {
+    const old = await extractBlocks(page, true);
+    if (hashBlocks(old.blocks) === entry.trHash) ext = old;
+  }
+  return (entry.ext = ext);
+}
+
 // --- Ghép một trang: bản gốc (che chữ) + chữ Việt đè lên, giãn trang khi cần ---
 async function composeOverlay(entry, opts) {
   const page = await pdfDoc.getPage(entry.pageNum);
-  const ext = entry.ext || (entry.ext = await extractBlocks(page));
+  const ext = await overlayExt(entry, page);
   const { Wp, Hp, blocks } = ext;
 
   // Bỏ bản dịch đã lưu nếu không còn khớp cấu trúc khối hiện tại (tránh đè lệch chỗ).
@@ -564,6 +603,7 @@ function hydrateOverlay() {
       if (!entry || entry.translated || !rec || !Array.isArray(rec.vi)) continue;
       entry.translated = rec.vi;
       entry.trHash = rec.h || '';
+      entry.ext = null;
       entry.composed = false;
       if (entry.btnEl) entry.btnEl.textContent = 'Dịch lại';
       setOvStat(entry, 'đã dịch', 'done');
@@ -713,7 +753,8 @@ function renderOverlay(keep) {
 async function translateOverlayPage(entry) {
   const apiKey = apiKeyEl.value.trim();
   const page = await pdfDoc.getPage(entry.pageNum);
-  const ext = entry.ext || (entry.ext = await extractBlocks(page));
+  // luôn dịch theo cách chia khối mới (kể cả "Dịch lại" một trang đang giữ cách chia cũ)
+  const ext = (entry.ext && !entry.ext.legacy) ? entry.ext : (entry.ext = await extractBlocks(page));
   const texts = ext.blocks.map((b) => b.text);
   if (!texts.length) { entry.translated = []; entry.trHash = hashBlocks(ext.blocks); return true; }
 
@@ -722,7 +763,7 @@ async function translateOverlayPage(entry) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       provider: providerEl.value, apiKey, model: modelEl.value.trim(),
-      skill: skillEl.value, blocks: texts,
+      skill: skillEl.value, blocks: texts, ...keepPayload(),
     }),
   });
   const data = await r.json().catch(() => ({}));
@@ -741,7 +782,7 @@ async function translateOverlayPage(entry) {
 // Trang đã có bản dịch còn khớp với cách chia khối hiện tại → khỏi dịch lại (đỡ tốn tiền)
 async function overlayPageDone(entry) {
   if (!entry.translated) return false;
-  const ext = entry.ext || (entry.ext = await extractBlocks(await pdfDoc.getPage(entry.pageNum)));
+  const ext = await overlayExt(entry);
   return entry.trHash === hashBlocks(ext.blocks) && entry.translated.length === ext.blocks.length;
 }
 

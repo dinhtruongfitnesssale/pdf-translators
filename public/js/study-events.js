@@ -115,7 +115,7 @@ for (const f of ['cue', 'note', 'sum']) {
 // Ctrl+F / F3: tìm chữ ngay trong app thay vì hộp tìm của trình duyệt (trình duyệt
 // chỉ thấy phần đang hiện trên màn hình, còn app tìm được cả tài liệu).
 document.addEventListener('keydown', (e) => {
-  if (!modalEl.hidden || !backupModalEl.hidden || !exportModalEl.hidden || !confirmEl.hidden || !promptEl.hidden) return;
+  if (!modalEl.hidden || !backupModalEl.hidden || !exportModalEl.hidden || !keepModalEl.hidden || !confirmEl.hidden || !promptEl.hidden) return;
   if (!pdfDoc) return; // chưa mở sách thì cứ để trình duyệt làm việc của nó
   if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'f') {
     e.preventDefault();
@@ -130,7 +130,7 @@ document.addEventListener('keydown', (e) => {
 // Phím tắt: F = tìm chữ, N = ngăn kéo, B = bookmark trang đang đọc, H = bật/tắt bôi,
 // P = đồng hồ Pomodoro (chạy được cả khi chưa mở tài liệu)
 document.addEventListener('keydown', (e) => {
-  if (!modalEl.hidden || !backupModalEl.hidden || !exportModalEl.hidden || !confirmEl.hidden || !promptEl.hidden) return;
+  if (!modalEl.hidden || !backupModalEl.hidden || !exportModalEl.hidden || !keepModalEl.hidden || !confirmEl.hidden || !promptEl.hidden) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const ae = document.activeElement;
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;

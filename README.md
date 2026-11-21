@@ -7,6 +7,8 @@ Web-app: mở PDF tiếng Anh, xem **bản gốc** và **bản dịch tiếng Vi
 - Song ngữ (gốc | dịch), hoặc chỉ Bản gốc / chỉ Bản dịch.
 - Dịch qua **Gemini (miễn phí)** hoặc **Claude** — dán API key của bạn (không lưu ở server).
 - Áp bộ **skill dịch** riêng theo lĩnh vực: Fitness & Health, Learning & Development (sửa trong `prompts.js`).
+- Nút **Giữ nguyên…**: tên khoa học, đơn vị (µg, mg, kcal…), ký hiệu hoá học, tên viết tắt (ATP, mTOR…) không bị dịch
+  (bật sẵn), cộng danh sách từ/cụm bạn tự thêm (lưu trong trình duyệt, gửi kèm mỗi lần dịch).
 - Modal chọn phạm vi trang để dịch, hoặc dịch cả cuốn.
 - Sửa/xóa chữ bản dịch, tự lưu; nhớ tài liệu + vị trí đọc khi refresh.
 - Chế độ **Đọc sách**: 2 trang/màn hình, lật trang (click/phím ← →) có hiệu ứng giở trang, phóng to, toàn màn hình. Áp dụng cho cả bản gốc và bản dịch (bản dịch tự dàn sang trang mới khi dài).
@@ -72,6 +74,8 @@ Hoặc bằng CLI: `npm i -g vercel` rồi `vercel` trong thư mục dự án.
   Chữ Việt dài hơn bản gốc: khối bên dưới bị đẩy xuống; sắp chạm hình / bảng / khung màu thì app chèn
   khoảng trống phía trên vật đó (kéo giãn một hàng ảnh nền trơn, nên khung màu và hàng bảng dài ra theo),
   không có chỗ cắt an toàn thì co chữ cho vừa. Nhãn hình chỉ nới rộng vào chỗ trống, không che nét vẽ.
+  Bảng số liệu: dòng nào có ô số cùng hàng ("104", "0.9 mg") là một hàng bảng → mỗi ô một khối, không gom thành đoạn văn.
+  Trang đã dịch theo cách chia khối cũ vẫn giữ cách chia cũ (khỏi dịch lại tốn tiền); bấm "Dịch lại" để chuyển sang cách mới.
 - PDF Đè trang được ghép ngay trong trình duyệt (`public/js/pdf-writer.js`): mỗi trang một ảnh JPEG + lớp chữ ẩn
   (phông `public/fonts/BeVietnamPro-Regular.ttf` nhúng kèm) để tìm/copy chữ được. Không gửi ảnh lên server nên không
   vướng giới hạn dung lượng của Vercel. Xuất được theo khoảng trang / chương (mục lục 2 cấp) và 3 mức chất lượng.

@@ -60,10 +60,11 @@ async function runTranslate({ provider, apiKey, model, system, text }) {
 // --- DỊCH (một khối chữ) ---
 app.post('/api/translate', async (req, res) => {
   try {
-    const { provider, apiKey, model, skill, text } = req.body || {};
+    const { provider, apiKey, model, skill, text, keepSci, keepTerms } = req.body || {};
     if (!apiKey) return res.status(400).json({ error: 'Thiếu API key.' });
     if (!text || !text.trim()) return res.json({ translation: '' });
-    const translation = await runTranslate({ provider, apiKey, model, system: buildSystemPrompt(skill), text });
+    const system = buildSystemPrompt(skill, { keepSci, keepTerms });
+    const translation = await runTranslate({ provider, apiKey, model, system, text });
     res.json({ translation: (translation || '').trim() });
   } catch (err) {
     console.error('translate error:', err?.message || err);
@@ -92,13 +93,15 @@ function parseNumbered(raw, n) {
 // trang; khối nào model trả thiếu/không khớp marker thì dịch lại riêng khối đó.
 app.post('/api/translate-blocks', async (req, res) => {
   try {
-    const { provider, apiKey, model, skill, blocks } = req.body || {};
+    const { provider, apiKey, model, skill, blocks, keepSci, keepTerms } = req.body || {};
     if (!apiKey) return res.status(400).json({ error: 'Thiếu API key.' });
     const list = Array.isArray(blocks) ? blocks : [];
     if (!list.length) return res.json({ translations: [] });
 
-    const systemBlocks = buildBlocksSystemPrompt(skill);
-    const systemPlain = buildSystemPrompt(skill);
+    // "Giữ nguyên…": tên khoa học / đơn vị / ký hiệu + danh sách thuật ngữ người dùng
+    const keep = { keepSci, keepTerms };
+    const systemBlocks = buildBlocksSystemPrompt(skill, keep);
+    const systemPlain = buildSystemPrompt(skill, keep);
     const input = list.map((b, i) => `[[${i + 1}]]\n${b == null ? '' : String(b)}`).join('\n\n');
 
     const raw = await runTranslate({ provider, apiKey, model, system: systemBlocks, text: input });
