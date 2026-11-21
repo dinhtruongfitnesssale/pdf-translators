@@ -194,14 +194,36 @@ async function extractBlocks(page, legacy = false) {
 }
 
 // --- Đo & bẻ dòng chữ Việt cho vừa bề rộng khối ---
+// Một "từ" dài hơn cả dòng (URL, DOI, tên hoá chất dài…) không có dấu cách để xuống dòng →
+// cắt nó ra, ưu tiên cắt ngay sau / . - _ ? & = # : ; nếu không thì cắt theo ký tự.
+function splitLongWord(ctx, w, maxW) {
+  const parts = [];
+  let rest = w;
+  while (rest && ctx.measureText(rest).width > maxW) {
+    let n = 1; // số ký tự lớn nhất vừa dòng
+    while (n < rest.length && ctx.measureText(rest.slice(0, n + 1)).width <= maxW) n++;
+    let cut = n;
+    for (let i = n; i > n * 0.5; i--) {
+      if (/[\/.\-_?&=#:;,]/.test(rest[i - 1])) { cut = i; break; }
+    }
+    parts.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  if (rest) parts.push(rest);
+  return parts;
+}
 function wrapLines(ctx, text, maxW) {
   const words = String(text).split(/\s+/).filter(Boolean);
   const lines = [];
   let line = '';
-  for (const w of words) {
-    const t = line ? line + ' ' + w : w;
-    if (line && ctx.measureText(t).width > maxW) { lines.push(line); line = w; }
-    else line = t;
+  for (const w0 of words) {
+    const pieces = ctx.measureText(w0).width > maxW ? splitLongWord(ctx, w0, maxW) : [w0];
+    pieces.forEach((w, i) => {
+      // mảnh nối tiếp của cùng một từ: không chèn dấu cách
+      const t = line ? line + (i ? '' : ' ') + w : w;
+      if (line && ctx.measureText(t).width > maxW) { lines.push(line); line = w; }
+      else line = t;
+    });
   }
   if (line) lines.push(line);
   return lines.length ? lines : [''];
